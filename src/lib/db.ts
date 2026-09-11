@@ -12,8 +12,11 @@ function databaseUrl() {
 
 export function getPool() {
   if (!globalThis.crmPgPool) {
+    const connectionString = databaseUrl();
+    const railwayPublicProxy = connectionString.includes(".proxy.rlwy.net");
     globalThis.crmPgPool = new Pool({
-      connectionString: databaseUrl(),
+      connectionString,
+      ssl: railwayPublicProxy ? { rejectUnauthorized: false } : undefined,
       max: 5,
       idleTimeoutMillis: 30_000,
       connectionTimeoutMillis: 10_000,
