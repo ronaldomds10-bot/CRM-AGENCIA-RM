@@ -519,6 +519,15 @@ textarea::placeholder {
 .flight-segment-heading strong { color: #9fc8ee; font-size: 0.78rem; }
 .flight-segment-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.65rem; }
 .add-flight-segment { width: 100%; min-height: 2.75rem; }
+.flight-result-card { border: 1px solid #1b3045; border-radius: 0.4rem; padding: 0.9rem; }
+.flight-result-meta { display: grid; grid-template-columns: 1fr 1fr auto; align-items: center; gap: 1rem; padding-bottom: 0.7rem; border-bottom: 1px solid #1b3045; color: #9fc8ee; font-size: 0.75rem; }
+.flight-result-meta strong { color: #fff; }
+.flight-result-meta img { width: 4.5rem; height: 2rem; object-fit: contain; border-radius: 0.3rem; background: #fff; padding: 0.2rem; }
+.flight-result-route { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2rem; padding: 0.8rem 0.25rem 0.15rem; }
+.flight-result-route > div { display: grid; gap: 0.4rem; }
+.flight-result-route small, .flight-result-route span { color: #9fc8ee; font-size: 0.75rem; }
+.flight-result-route strong { font-size: 1.25rem; }
+.flight-result-route em { color: #9fc8ee; font-size: 0.65rem; font-style: normal; font-weight: 500; }
 .compact-passenger-panel { border: 1px solid #1b3045; border-radius: 0.35rem; padding: 0.65rem; }
 .compact-passenger-list { display: grid; gap: .55rem; margin-bottom: .65rem; }
 .compact-passenger { display: grid; gap: 0.45rem; border: 1px solid #1b3045; border-radius: .35rem; padding: .65rem; background: #020c19; }
@@ -540,6 +549,7 @@ textarea::placeholder {
 @media (max-width: 900px) {
   .compact-flight-layout { grid-template-columns: 1fr; }
   .flight-segment-grid { grid-template-columns: 1fr; }
+  .flight-result-route { grid-template-columns: 1fr; gap: 1rem; }
   .flight-booking-bar { align-items: stretch; flex-direction: column; }
   .flight-booking-bar > div:last-child { flex-wrap: wrap; }
   .section-band-bar { align-items: stretch; flex-direction: column; }

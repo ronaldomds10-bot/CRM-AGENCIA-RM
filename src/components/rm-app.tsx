@@ -2415,6 +2415,7 @@ function CompactFlightBlock({ title, flight, onChange, segments, onSegmentsChang
             <Field label="Partida"><TimeInput value={flight.departTime} onChange={(departTime) => onChange({ ...flight, departTime })} /></Field>
             <Field label="Chegada"><TimeInput value={flight.arriveTime} onChange={(arriveTime) => onChange({ ...flight, arriveTime })} /></Field>
           </div> : null}
+          {(flight.code || flight.from || flight.to || flight.airline) ? <FlightSummaryCard flight={flight} /> : null}
           <div className="flight-segments">
             {segments.map((segment, index) => <FlightSegmentCard key={segment.segmentId ?? index} segment={segment} index={index + 2} onChange={(next) => onSegmentsChange(segments.map((item, itemIndex) => itemIndex === index ? next : item))} onRemove={() => onSegmentsChange(segments.filter((_, itemIndex) => itemIndex !== index))} />)}
             <button className="light-mini add-flight-segment" type="button" onClick={() => onSegmentsChange([...segments, { ...emptyFlight(), segmentId: uid() }])}>＋ Adicionar trecho</button>
@@ -2447,6 +2448,25 @@ function CompactFlightBlock({ title, flight, onChange, segments, onSegmentsChang
       </div>
     </section>
   );
+}
+function FlightSummaryCard({ flight }: { flight: Flight }) {
+  const airlineKey = flight.airline.toLowerCase();
+  const logo = airlineKey.includes("latam") ? "/airlines/latam.svg" : airlineKey.includes("gol") ? "/airlines/gol.svg" : airlineKey.includes("azul") ? "/airlines/azul.svg" : "";
+  const durationLabel = (() => {
+    if (!flight.departTime || !flight.arriveTime) return "";
+    const [startHour, startMinute] = flight.departTime.split(":").map(Number);
+    const [endHour, endMinute] = flight.arriveTime.split(":").map(Number);
+    let minutes = endHour * 60 + endMinute - (startHour * 60 + startMinute);
+    if (minutes < 0) minutes += 1440;
+    return `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, "0")}min`;
+  })();
+  return <article className="flight-result-card">
+    <div className="flight-result-meta"><span>Voo <strong>{flight.code || "A confirmar"}</strong></span><strong>{flight.cabinClass || "Econômica"}</strong>{logo ? <img src={logo} alt={flight.airline} /> : <strong>{flight.airline || "Companhia aérea"}</strong>}</div>
+    <div className="flight-result-route">
+      <div><small>Saindo</small><strong>{flight.departTime || "--:--"}<em> GMT-3</em></strong><span>✈ {flight.from || "Origem a confirmar"}</span><span>▣ {flight.date ? new Date(`${flight.date}T12:00:00`).toLocaleDateString("pt-BR") : "Selecione uma data"}</span></div>
+      <div><small>Chegada</small><strong>{flight.arriveTime || "--:--"}{durationLabel ? <em> ({durationLabel})</em> : null}</strong><span>✈ {flight.to || "Destino a confirmar"}</span><span>▣ {flight.date ? new Date(`${flight.date}T12:00:00`).toLocaleDateString("pt-BR") : "Selecione uma data"}</span></div>
+    </div>
+  </article>;
 }
 const flightAirlines = ["Azul", "GOL", "LATAM", "KLM", "Aerolineas Argentinas", "Air China", "Royal Air Maroc", "Iberia", "TAP"];
 function FlightSegmentCard({ segment, index, onChange, onRemove }: { segment: Flight; index: number; onChange: (flight: Flight) => void; onRemove: () => void }) {
@@ -3591,7 +3611,8 @@ function IssueEditor({
           </div>
           {issue.issueType === "flight" ? (
             <SectionBand icon="✈" title="Emissões de voo" action="Nova viagem" onImport={() => setQuoteImportOpen(true)}>
-              <FlightBlock
+              <datalist id="flight-airline-suggestions">{flightAirlines.map((airline) => <option key={airline} value={airline} />)}</datalist>
+              <CompactFlightBlock
                 title="Viagem de ida"
                 flight={issue.flightOut}
                 onChange={(flightOut) => onChange({
@@ -3599,8 +3620,10 @@ function IssueEditor({
                   flightOut,
                   route: flightRoute(flightOut, issue.flightBack),
                 })}
+                segments={issue.flightOutSegments ?? []}
+                onSegmentsChange={(flightOutSegments) => onChange({ ...issue, flightOutSegments })}
               />
-              <FlightBlock
+              <CompactFlightBlock
                 title="Viagem de volta"
                 flight={issue.flightBack}
                 onChange={(flightBack) => onChange({
@@ -3608,6 +3631,8 @@ function IssueEditor({
                   flightBack,
                   route: flightRoute(issue.flightOut, flightBack),
                 })}
+                segments={issue.flightBackSegments ?? []}
+                onSegmentsChange={(flightBackSegments) => onChange({ ...issue, flightBackSegments })}
               />
             </SectionBand>
           ) : issue.issueType === "car" ? (
