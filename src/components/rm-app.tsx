@@ -1986,6 +1986,7 @@ function QuoteEditor({
   onSave: (quote: Quote) => void;
   onDelete: (id: string) => void;
 }) {
+  const [draft, setDraft] = useState(quote);
   const [importSection, setImportSection] = useState<"cars" | "hotels" | "insurance" | null>(null);
   const tabs: Array<[QuoteTab, string]> = [
     ["trip", "Dados da viagem"],
@@ -2002,11 +2003,11 @@ function QuoteEditor({
   const importSectionFromQuote = (source: Quote) => {
     if (!importSection) return;
     if (importSection === "cars") {
-      onSave({ ...quote, car: { ...source.car }, carOptions: (source.carOptions ?? []).map((item) => ({ ...item })) });
+      setDraft({ ...draft, car: { ...source.car }, carOptions: (source.carOptions ?? []).map((item) => ({ ...item })) });
     } else if (importSection === "hotels") {
-      onSave({ ...quote, hotel: { ...source.hotel }, hotelOptions: (source.hotelOptions ?? []).map((item) => ({ ...item })) });
+      setDraft({ ...draft, hotel: { ...source.hotel }, hotelOptions: (source.hotelOptions ?? []).map((item) => ({ ...item })) });
     } else {
-      onSave({ ...quote, insurance: { ...source.insurance }, insuranceOptions: (source.insuranceOptions ?? []).map((item) => ({ ...item })) });
+      setDraft({ ...draft, insurance: { ...source.insurance }, insuranceOptions: (source.insuranceOptions ?? []).map((item) => ({ ...item })) });
     }
     setImportSection(null);
   };
@@ -2016,17 +2017,17 @@ function QuoteEditor({
         <button className="nav-secondary" onClick={onBack}>
           ← Orçamentos
         </button>
-        <input className="input mr-auto max-w-md text-xl font-semibold" aria-label="Nome do orçamento" placeholder="Novo orçamento" value={quote.name} onChange={(e) => onSave({ ...quote, name: e.target.value })} />
-        <button className="quote-delete" aria-label="Excluir orçamento" title="Excluir orçamento" onClick={() => onDelete(quote.id)}>
+        <input className="input mr-auto max-w-md text-xl font-semibold" aria-label="Nome do orçamento" placeholder="Novo orçamento" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
+        <button className="quote-delete" aria-label="Excluir orçamento" title="Excluir orçamento" onClick={() => onDelete(draft.id)}>
           <TrashIcon />
         </button>
-        <button className="dark-mini" onClick={() => window.open(shareUrl({ quote, settings }), "_blank", "noopener,noreferrer")}>
+        <button className="dark-mini" onClick={() => window.open(shareUrl({ quote: draft, settings }), "_blank", "noopener,noreferrer")}>
           Compartilhar Beta
         </button>
-        <button className="dark-mini" onClick={() => openQuotePdf(quote, settings)}>
+        <button className="dark-mini" onClick={() => openQuotePdf(draft, settings)}>
           Ver PDF
         </button>
-        <button className="light-mini" onClick={() => onSave(quote)}>
+        <button className="light-mini" onClick={() => onSave(draft)}>
           Salvar
         </button>
       </div>
@@ -2041,18 +2042,18 @@ function QuoteEditor({
           </button>
         ))}
       </div>
-      {tab === "trip" ? <TripForm quote={quote} settings={settings} onChange={onSave} /> : null}
+      {tab === "trip" ? <TripForm quote={draft} settings={settings} onChange={setDraft} /> : null}
       {tab === "flights" ? (
-        <FlightsForm quote={quote} onChange={onSave} />
+        <FlightsForm quote={draft} onChange={setDraft} />
       ) : null}
-      {tab === "cars" ? <CarsForm quote={quote} onChange={onSave} onImport={() => setImportSection("cars")} /> : null}
-      {tab === "hotels" ? <HotelsForm quote={quote} onChange={onSave} onImport={() => setImportSection("hotels")} /> : null}
+      {tab === "cars" ? <CarsForm quote={draft} onChange={setDraft} onImport={() => setImportSection("cars")} /> : null}
+      {tab === "hotels" ? <HotelsForm quote={draft} onChange={setDraft} onImport={() => setImportSection("hotels")} /> : null}
       {tab === "insurance" ? (
-        <InsuranceForm quote={quote} onChange={onSave} onImport={() => setImportSection("insurance")} />
+        <InsuranceForm quote={draft} onChange={setDraft} onImport={() => setImportSection("insurance")} />
       ) : null}
       {importSection ? (
         <QuoteImportModal
-          quotes={quotes.filter((item) => item.id !== quote.id && !item.isIssue)}
+          quotes={quotes.filter((item) => item.id !== draft.id && !item.isIssue)}
           onClose={() => setImportSection(null)}
           onImport={importSectionFromQuote}
           description={`Selecione um orçamento salvo para importar ${importLabels[importSection]}. Os demais dados deste orçamento serão preservados.`}
