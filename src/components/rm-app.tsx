@@ -5554,6 +5554,7 @@ function FullState({ title, message }: { title: string; message: string }) {
   );
 }
 function LoginState({ onSuccess }: { onSuccess: () => void }) {
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -5565,7 +5566,7 @@ function LoginState({ onSuccess }: { onSuccess: () => void }) {
       const response = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password }),
+        body: JSON.stringify({ email, password }),
       });
       const body = await response.json().catch(() => ({})) as { error?: string };
       if (!response.ok) throw new Error(body.error || "Não foi possível entrar.");
@@ -5581,8 +5582,20 @@ function LoginState({ onSuccess }: { onSuccess: () => void }) {
       <form className="w-full max-w-sm rounded-xl border border-[#1c3148] bg-[#030b16] p-6 shadow-2xl" onSubmit={submit}>
         <p className="text-sm font-bold uppercase tracking-[0.18em] text-[#ffc83d]">RM Partiu Viagens</p>
         <h1 className="mt-2 text-2xl font-bold">Acessar o CRM</h1>
-        <p className="mt-2 text-sm text-[#9fc8ee]">Use a senha administrativa para acessar os dados da agência.</p>
-        <label className="mt-5 block text-sm font-bold" htmlFor="crm-password">Senha</label>
+        <p className="mt-2 text-sm text-[#9fc8ee]">Use suas credenciais administrativas para acessar os dados da agência.</p>
+        <label className="mt-5 block text-sm font-bold" htmlFor="crm-email">Usuário</label>
+        <input
+          id="crm-email"
+          className="input mt-2"
+          type="email"
+          inputMode="email"
+          autoComplete="username"
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+          required
+          autoFocus
+        />
+        <label className="mt-4 block text-sm font-bold" htmlFor="crm-password">Senha</label>
         <input
           id="crm-password"
           className="input mt-2"
@@ -5591,7 +5604,6 @@ function LoginState({ onSuccess }: { onSuccess: () => void }) {
           value={password}
           onChange={(event) => setPassword(event.target.value)}
           required
-          autoFocus
         />
         {error ? <p className="mt-3 text-sm text-red-300" role="alert">{error}</p> : null}
         <button className="gold-button mt-5 w-full" type="submit" disabled={loading}>

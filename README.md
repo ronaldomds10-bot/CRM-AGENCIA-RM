@@ -32,6 +32,7 @@ Crie um arquivo `.env.local` baseado em `.env.example`:
 
 ```bash
 DATABASE_URL=
+CRM_ADMIN_EMAIL=
 CRM_ACCESS_PASSWORD=
 CRM_AUTH_SECRET=
 ```
@@ -49,6 +50,6 @@ npm run dev
 
 ## Próximos passos
 
-- Configurar `DATABASE_URL`, `CRM_ACCESS_PASSWORD` e `CRM_AUTH_SECRET` no ambiente de produção.
+- Configurar `DATABASE_URL`, `CRM_ADMIN_EMAIL`, `CRM_ACCESS_PASSWORD` e `CRM_AUTH_SECRET` no ambiente de produção.
 - Manter backups periódicos do PostgreSQL e pelo exportador JSON do sistema.
 - Adicionar geração final de PDF e compartilhamento de orçamentos.

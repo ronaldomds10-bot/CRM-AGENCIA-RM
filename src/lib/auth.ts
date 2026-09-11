@@ -8,14 +8,20 @@ function secret() {
 }
 
 export function authConfigured() {
-  return Boolean(process.env.CRM_ACCESS_PASSWORD && secret());
+  return Boolean(process.env.CRM_ADMIN_EMAIL && process.env.CRM_ACCESS_PASSWORD && secret());
 }
 
-export function passwordsMatch(password: string) {
-  const expected = process.env.CRM_ACCESS_PASSWORD || "";
-  const supplied = Buffer.from(password);
+function valuesMatch(value: string, expected: string) {
+  const supplied = Buffer.from(value);
   const target = Buffer.from(expected);
   return supplied.length === target.length && timingSafeEqual(supplied, target);
+}
+
+export function credentialsMatch(email: string, password: string) {
+  const expectedEmail = (process.env.CRM_ADMIN_EMAIL || "").trim().toLocaleLowerCase("pt-BR");
+  const expectedPassword = process.env.CRM_ACCESS_PASSWORD || "";
+  return valuesMatch(email.trim().toLocaleLowerCase("pt-BR"), expectedEmail)
+    && valuesMatch(password, expectedPassword);
 }
 
 export function sessionToken() {
