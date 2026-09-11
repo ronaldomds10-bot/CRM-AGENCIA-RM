@@ -60,6 +60,7 @@ type CarReservation = {
   abs: boolean;
   electricWindows: boolean;
   electricLocks: boolean;
+  powerSteering: boolean;
   automatic: boolean;
   refundable: boolean;
 };
@@ -472,6 +473,7 @@ function defaultQuote(): Quote {
       abs: true,
       electricWindows: true,
       electricLocks: true,
+      powerSteering: true,
       automatic: false,
       refundable: false,
     },
@@ -511,6 +513,7 @@ function blankQuote(): Quote {
       returnTime: "", pickupAddress: "", returnAddress: "", models: "",
       passengers: 0, doors: 0, sameLocation: false, airConditioning: false,
       airbag: false, abs: false, electricWindows: false, electricLocks: false,
+      powerSteering: false,
     },
     hotel: {
       ...quote.hotel, name: "", address: "", checkin: "", checkout: "",
@@ -1176,7 +1179,7 @@ async function openCarIssuePdf(issue: Quote, settings: AppSettings) {
   text("▰  Modelos", 19, 137, 8, ink, "bold"); text(issue.car.models || "Modelo a confirmar", 19, 145, 7.2, muted);
   const features = [
     issue.car.airConditioning && "Ar condicionado", issue.car.airbag && "Air Bag", `${issue.car.passengers || 0} lugares`, `${issue.car.doors || 0} portas`,
-    issue.car.electricLocks && "Trava elétrica", issue.car.automatic && "Transmissão automática", issue.car.abs && "Freio ABS", issue.car.electricWindows && "Vidros elétricos",
+    issue.car.powerSteering && "Direção elétrica", issue.car.electricLocks && "Trava elétrica", issue.car.automatic && "Transmissão automática", issue.car.abs && "Freio ABS", issue.car.electricWindows && "Vidros elétricos",
   ].filter(Boolean) as string[];
   features.forEach((feature, index) => text(`◇  ${feature}`, 19 + (index % 5) * 49, 157 + Math.floor(index / 5) * 10, 7, ink));
   text(`Esta reserva ${issue.car.refundable ? "é" : "não é"} reembolsável`, 19, 174, 7, muted);
@@ -2663,18 +2666,8 @@ function CarsForm({
   return (
     <SectionBand icon="▱" title="Reservas de carro" action="Novo aluguel de carro" onAdd={() => onChange({ ...quote, carOptions: [...(quote.carOptions ?? []), blankQuote().car] })} onImport={onImport}>
       <Panel title="Locação 1">
-        <div className="form-grid">
-          <DateRangePicker label="Período da locação" start={car.pickupDate} end={car.returnDate} onChange={(pickupDate, returnDate) => onChange({ ...quote, car: { ...car, pickupDate, returnDate } })} />
-          <Field label="Modelos">
-            <input
-              className="input"
-              placeholder="Ex.: Econômico ou SUV compacto"
-              value={car.models}
-              onChange={(e) =>
-                onChange({ ...quote, car: { ...car, models: e.target.value } })
-              }
-            />
-          </Field>
+        <div className="car-rental-form">
+          <div className="car-field-wide"><DateRangePicker label="Datas da locação" start={car.pickupDate} end={car.returnDate} onChange={(pickupDate, returnDate) => onChange({ ...quote, car: { ...car, pickupDate, returnDate } })} /></div>
           <Field label="Horário de retirada">
             <TimeInput value={car.pickupTime} onChange={(pickupTime) => onChange({ ...quote, car: { ...car, pickupTime } })} />
           </Field>
@@ -2682,75 +2675,35 @@ function CarsForm({
             <TimeInput value={car.returnTime} onChange={(returnTime) => onChange({ ...quote, car: { ...car, returnTime } })} />
           </Field>
           <Field label="Local de retirada">
-            <button
-              className="address-button"
-              onClick={() => setAddressMode("pickup")}
-            >
-              {car.pickupAddress || "Adicionar endereço"} ✎
-            </button>
+            <button className="address-button" onClick={() => setAddressMode("pickup")}>{car.pickupAddress || "Adicionar endereço"} ✎</button>
           </Field>
           <Field label="Local de devolução">
-            <button
-              className="address-button"
-              onClick={() => setAddressMode("return")}
-            >
-              {car.returnAddress || "Adicionar endereço"} ✎
-            </button>
+            <button className="address-button" onClick={() => setAddressMode("return")}>{car.returnAddress || "Adicionar endereço"} ✎</button>
           </Field>
-          <label className="toggle-row">
-            <input type="checkbox" checked={car.sameLocation} onChange={(e) => onChange({ ...quote, car: { ...car, sameLocation: e.target.checked, returnAddress: e.target.checked ? car.pickupAddress : car.returnAddress } })} /> Devolver no mesmo endereço
-          </label>
-          <label className="toggle-row">
+          <label className="car-switch-row"><span>Devolver o carro no mesmo endereço</span><span className="switch"><input type="checkbox" checked={car.sameLocation} onChange={(e) => onChange({ ...quote, car: { ...car, sameLocation: e.target.checked, returnAddress: e.target.checked ? car.pickupAddress : car.returnAddress } })} /><span /></span></label>
+          <label className="car-switch-row"><span>Reembolsável</span><span className="switch"><input type="checkbox" checked={car.refundable} onChange={(e) => onChange({ ...quote, car: { ...car, refundable: e.target.checked } })} /><span /></span></label>
+          <div className="car-field-wide"><Field label="Modelos">
             <input
-              type="checkbox"
-              checked={car.refundable}
+              className="input"
+              placeholder="Digite os modelos separados por vírgula"
+              value={car.models}
               onChange={(e) =>
-                onChange({
-                  ...quote,
-                  car: { ...car, refundable: e.target.checked },
-                })
+                onChange({ ...quote, car: { ...car, models: e.target.value } })
               }
-            />{" "}
-            Reembolsável
-          </label>
-          <label className="toggle-row">
-            <input
-              type="checkbox"
-              checked={car.automatic}
-              onChange={(e) =>
-                onChange({
-                  ...quote,
-                  car: { ...car, automatic: e.target.checked },
-                })
-              }
-            />{" "}
-            Transmissão automática
-          </label>
-          {([
-            ["airConditioning", "Ar condicionado"],
-            ["airbag", "Airbag"],
-            ["abs", "Freio ABS"],
-            ["electricWindows", "Vidros elétricos"],
-            ["electricLocks", "Travas elétricas"],
-          ] as const).map(([key, label]) => (
-            <label className="toggle-row" key={key}>
-              <input type="checkbox" checked={car[key]} onChange={(e) => onChange({ ...quote, car: { ...car, [key]: e.target.checked } })} /> {label}
-            </label>
-          ))}
+            />
+            <small>Informe o nome dos modelos separados por vírgula</small>
+          </Field></div>
         </div>
-        <div className="feature-grid">
-          <Feature text={`${car.passengers} passageiros`} />
-          <Feature text={`${car.doors} portas`} />
-          <Feature
-            text={
-              car.automatic ? "Transmissão automática" : "Transmissão manual"
-            }
-          />
-          <Feature text={car.airConditioning ? "Ar condicionado" : "Sem ar condicionado"} />
-          <Feature text={car.airbag ? "Airbag" : "Sem airbag"} />
-          <Feature text={car.abs ? "Freio ABS" : "Sem freio ABS"} />
-          <Feature text={car.electricWindows ? "Vidros elétricos" : "Vidros manuais"} />
-          <Feature text={car.electricLocks ? "Travas elétricas" : "Travas manuais"} />
+        <div className="car-feature-grid">
+          <CarFeatureCard icon="❉" active={car.airConditioning} label={car.airConditioning ? "Com ar condicionado" : "Sem ar condicionado"} onClick={() => onChange({ ...quote, car: { ...car, airConditioning: !car.airConditioning } })} />
+          <CarFeatureCard icon="◇" active={car.airbag} label={car.airbag ? "Com airbag" : "Sem airbag"} onClick={() => onChange({ ...quote, car: { ...car, airbag: !car.airbag } })} />
+          <CarFeatureCard icon="♙" active label={`${car.passengers || 1} passageiros`} onClick={() => onChange({ ...quote, car: { ...car, passengers: (car.passengers || 1) >= 9 ? 1 : (car.passengers || 1) + 1 } })} />
+          <CarFeatureCard icon="▥" active label={`${car.doors || 1} portas`} onClick={() => onChange({ ...quote, car: { ...car, doors: (car.doors || 1) >= 5 ? 1 : (car.doors || 1) + 1 } })} />
+          <CarFeatureCard icon="⚙" active={car.powerSteering} label={car.powerSteering ? "Direção elétrica" : "Direção manual"} onClick={() => onChange({ ...quote, car: { ...car, powerSteering: !car.powerSteering } })} />
+          <CarFeatureCard icon="≋" active={car.automatic} label={car.automatic ? "Transmissão automática" : "Transmissão manual"} onClick={() => onChange({ ...quote, car: { ...car, automatic: !car.automatic } })} />
+          <CarFeatureCard icon="◔" active={car.abs} label={car.abs ? "Com freio ABS" : "Sem freio ABS"} onClick={() => onChange({ ...quote, car: { ...car, abs: !car.abs } })} />
+          <CarFeatureCard icon="▤" active={car.electricWindows} label={car.electricWindows ? "Vidros elétricos" : "Vidros manuais"} onClick={() => onChange({ ...quote, car: { ...car, electricWindows: !car.electricWindows } })} />
+          <CarFeatureCard icon="♙" active={car.electricLocks} label={car.electricLocks ? "Trava elétrica" : "Trava manual"} onClick={() => onChange({ ...quote, car: { ...car, electricLocks: !car.electricLocks } })} />
         </div>
       </Panel>
       {(quote.carOptions ?? []).map((option, index) => <Panel key={index} title={`Locação ${index + 2}`}>
@@ -5641,6 +5594,11 @@ function Feature({ text }: { text: string }) {
       {text}
     </div>
   );
+}
+function CarFeatureCard({ icon, label, active, onClick }: { icon: string; label: string; active: boolean; onClick: () => void }) {
+  return <button type="button" className={`car-feature-card ${active ? "car-feature-active" : ""}`} aria-pressed={active} onClick={onClick}>
+    <span aria-hidden="true">{icon}</span><strong>{label}</strong>
+  </button>;
 }
 function Table({
   headers,

@@ -1004,6 +1004,17 @@ textarea::placeholder {
   gap: 0.75rem;
   margin-top: 1rem;
 }
+.car-rental-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.car-field-wide { grid-column: 1 / -1; }
+.car-field-wide small { display: block; margin-top: 0.35rem; color: #83a8ca; font-size: 0.72rem; }
+.car-switch-row { display: flex; min-height: 3rem; align-items: center; justify-content: space-between; gap: 1rem; color: #eaf4ff; font-size: 0.8rem; font-weight: 700; }
+.car-feature-grid { display: grid; grid-template-columns: repeat(9, minmax(7rem, 1fr)); gap: 0.65rem; margin-top: 1.25rem; overflow-x: auto; padding-bottom: 0.25rem; }
+.car-feature-card { display: grid; min-height: 5rem; align-content: space-between; gap: 0.5rem; border: 1px solid #29435e; border-radius: 0.4rem; background: #142438; padding: 0.75rem; color: #9fc8ee; text-align: left; transition: border-color .18s ease, background .18s ease, color .18s ease; }
+.car-feature-card:hover { border-color: #6f91b1; background: #1b3045; }
+.car-feature-card:focus-visible { outline: 3px solid rgba(255, 200, 61, .45); outline-offset: 2px; }
+.car-feature-card > span { font-size: 1.15rem; }
+.car-feature-card strong { font-size: 0.72rem; line-height: 1.25; }
+.car-feature-card.car-feature-active { border-color: #f6f8fb; background: #f6f8fb; color: #0c172b; }
 
 .address-button {
   min-height: 3rem;
@@ -2190,6 +2201,9 @@ textarea:focus-visible {
 }
 
 @media (max-width: 720px) {
+  .car-rental-form { grid-template-columns: 1fr; }
+  .car-field-wide { grid-column: auto; }
+  .car-feature-grid { grid-template-columns: repeat(2, minmax(8rem, 1fr)); overflow-x: visible; }
   .calendar-grid { gap: 0.25rem; }
   .calendar-day { min-height: 4.5rem; padding: 0.35rem; }
   .calendar-day .calendar-marker {
