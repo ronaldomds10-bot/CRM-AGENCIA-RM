@@ -1137,7 +1137,57 @@ function openIssuePdfLegacy(issue: Quote, settings: AppSettings) {
   window.setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
 
+async function openCarIssuePdf(issue: Quote, settings: AppSettings) {
+  const pdf = new jsPDF({ unit: "mm", format: "a4", orientation: "landscape" });
+  const ink = [12, 23, 43] as const;
+  const muted = [78, 91, 111] as const;
+  const border = [210, 215, 222] as const;
+  const text = (value: string, x: number, y: number, size = 8, color: readonly [number, number, number] = ink, style: "normal" | "bold" = "normal", options: Record<string, unknown> = {}) => {
+    pdf.setFont("helvetica", style); pdf.setFontSize(size); pdf.setTextColor(...color); pdf.text(value, x, y, options);
+  };
+  const date = (value: string) => value ? new Date(`${value}T12:00:00`).toLocaleDateString("pt-BR") : "A confirmar";
+  const shortDate = (value: string) => value ? new Date(`${value}T12:00:00`).toLocaleDateString("pt-BR", { day: "numeric", month: "long", year: "numeric" }) : "A confirmar";
+  const days = issue.car.pickupDate && issue.car.returnDate ? Math.max(1, Math.ceil((new Date(`${issue.car.returnDate}T12:00:00`).getTime() - new Date(`${issue.car.pickupDate}T12:00:00`).getTime()) / 86400000)) : 0;
+  pdf.setFillColor(255, 255, 255); pdf.rect(0, 0, 297, 210, "F");
+  let logoRendered = false;
+  if (issue.issue.showLogo && settings.logoDataUrl) {
+    try { pdf.addImage(settings.logoDataUrl, 10, 10, 36, 36, undefined, "FAST"); logoRendered = true; } catch { logoRendered = false; }
+  }
+  if (!logoRendered) { pdf.setFillColor(255, 105, 0); pdf.roundedRect(10, 10, 36, 36, 5, 5, "F"); text("RM", 28, 30, 16, [255, 255, 255], "bold", { align: "center" }); text("VIAGENS", 28, 39, 5, [255, 255, 255], "bold", { align: "center" }); }
+  const qrValue = issue.qrContent || issue.issue.locatorLink || issue.issue.locator;
+  const qrImage = qrValue ? await QRCode.toDataURL(qrValue, { margin: 0, width: 320, errorCorrectionLevel: "M" }) : "";
+  text("Seu localizador é", 245, 21, 6, muted, "normal", { align: "right" });
+  text(issue.issue.locator || "NÃO INFORMADO", 245, 29, 10, ink, "bold", { align: "right" });
+  text("Clique ou escaneie o QR Code", 245, 36, 5, muted, "normal", { align: "right" });
+  if (qrImage) pdf.addImage(qrImage, "PNG", 252, 15, 24, 24, undefined, "FAST");
+  else { pdf.setDrawColor(...border); pdf.rect(252, 15, 24, 24); text("QR", 264, 29, 9, muted, "bold", { align: "center" }); }
+
+  text("▰", 10, 66, 13, ink, "bold"); text("Carros", 24, 66, 13, ink, "bold");
+  pdf.setDrawColor(...border); pdf.setFillColor(255, 255, 255); pdf.roundedRect(10, 73, 267, 109, 7, 7, "FD");
+  pdf.setFillColor(...ink); pdf.roundedRect(19, 82, 59, 9, 4.5, 4.5, "F"); text(`${shortDate(issue.car.pickupDate)} – ${shortDate(issue.car.returnDate)}`, 48.5, 88, 6, [255, 255, 255], "normal", { align: "center" });
+  pdf.roundedRect(82, 82, 28, 9, 4.5, 4.5, "F"); text(days ? `${days} diária${days === 1 ? "" : "s"}` : "Diárias", 96, 88, 6, [255, 255, 255], "normal", { align: "center" });
+  text("◉  Retirada", 19, 102, 8, ink, "bold"); text("◉  Devolução", 145, 102, 8, ink, "bold");
+  text(`${date(issue.car.pickupDate)} • ${issue.car.pickupTime || "--:--"}`, 19, 111, 6.7, ink);
+  text(`${date(issue.car.returnDate)} • ${issue.car.returnTime || "--:--"}`, 145, 111, 6.7, ink);
+  const pickupLines = pdf.splitTextToSize(issue.car.pickupAddress || "Local de retirada a confirmar", 112) as string[];
+  const returnLines = pdf.splitTextToSize(issue.car.returnAddress || issue.car.pickupAddress || "Local de devolução a confirmar", 112) as string[];
+  pickupLines.slice(0, 2).forEach((line, index) => text(line, 19, 118 + index * 5, 6.2, ink));
+  returnLines.slice(0, 2).forEach((line, index) => text(line, 145, 118 + index * 5, 6.2, ink));
+  text("▰  Modelos", 19, 137, 8, ink, "bold"); text(issue.car.models || "Modelo a confirmar", 19, 145, 7.2, muted);
+  const features = [
+    issue.car.airConditioning && "Ar condicionado", issue.car.airbag && "Air Bag", `${issue.car.passengers || 0} lugares`, `${issue.car.doors || 0} portas`,
+    issue.car.electricLocks && "Trava elétrica", issue.car.automatic && "Transmissão automática", issue.car.abs && "Freio ABS", issue.car.electricWindows && "Vidros elétricos",
+  ].filter(Boolean) as string[];
+  features.forEach((feature, index) => text(`◇  ${feature}`, 19 + (index % 5) * 49, 157 + Math.floor(index / 5) * 10, 7, ink));
+  text(`Esta reserva ${issue.car.refundable ? "é" : "não é"} reembolsável`, 19, 174, 7, muted);
+  const url = URL.createObjectURL(pdf.output("blob"));
+  const popup = window.open(url, "_blank");
+  if (!popup) { const link = document.createElement("a"); link.href = url; link.target = "_blank"; link.rel = "noopener noreferrer"; link.click(); }
+  window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
 async function openIssuePdf(issue: Quote, settings: AppSettings) {
+  if (issue.issueType === "car") { await openCarIssuePdf(issue, settings); return; }
   const pdf = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
   const ink = [12, 23, 43] as const;
   const muted = [101, 112, 130] as const;
