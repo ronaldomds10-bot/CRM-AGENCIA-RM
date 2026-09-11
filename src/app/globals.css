@@ -519,6 +519,7 @@ textarea::placeholder {
 .flight-segment-heading strong { color: #9fc8ee; font-size: 0.78rem; }
 .flight-segment-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.65rem; }
 .add-flight-segment { width: 100%; min-height: 2.75rem; }
+.airline-picker-field { display: grid; gap: 0.5rem; }
 .flight-result-card { border: 1px solid #1b3045; border-radius: 0.4rem; padding: 0.9rem; }
 .flight-result-meta { display: grid; grid-template-columns: 1fr 1fr auto; align-items: center; gap: 1rem; padding-bottom: 0.7rem; border-bottom: 1px solid #1b3045; color: #9fc8ee; font-size: 0.75rem; }
 .flight-result-meta strong { color: #fff; }

@@ -2362,9 +2362,6 @@ function FlightsForm({
   const [showReturn, setShowReturn] = useState(() => Boolean(quote.flightBack.code || quote.flightBack.from || quote.flightBack.to || quote.flightBack.date || quote.flightBackSegments?.length));
   return (
     <div className="flight-booking">
-      <datalist id="flight-airline-suggestions">
-        {flightAirlines.map((airline) => <option key={airline} value={airline} />)}
-      </datalist>
       <div className="flight-booking-bar">
         <div><span aria-hidden="true">✈</span><strong>Reservas de voo</strong></div>
         <div>
@@ -2383,7 +2380,7 @@ function FlightsForm({
     </div>
   );
 }
-function CompactFlightBlock({ title, flight, onChange, segments, onSegmentsChange, onRemove }: { title: string; flight: Flight; onChange: (flight: Flight) => void; segments: Flight[]; onSegmentsChange: (segments: Flight[]) => void; onRemove?: () => void }) {
+function CompactFlightBlock({ title, flight, onChange, segments, onSegmentsChange, onRemove, showSummary = true }: { title: string; flight: Flight; onChange: (flight: Flight) => void; segments: Flight[]; onSegmentsChange: (segments: Flight[]) => void; onRemove?: () => void; showSummary?: boolean }) {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const changePassengers = (passengers: Passenger[]) => onChange(syncPassengerBaggage({ ...flight, passengers }));
   const searchAirline = () => {
@@ -2408,14 +2405,14 @@ function CompactFlightBlock({ title, flight, onChange, segments, onSegmentsChang
             <button className="light-mini" type="button" onClick={() => setDetailsOpen((value) => !value)}>＋ Adicionar</button>
           </div>
           {detailsOpen ? <div className="flight-extra-fields">
-            <Field label="Companhia"><input className="input" list="flight-airline-suggestions" placeholder="Selecione ou digite uma companhia" value={flight.airline} onChange={(e) => onChange({ ...flight, airline: e.target.value })} /></Field>
+            <Field label="Companhia"><AirlinePicker value={flight.airline} onChange={(airline) => onChange({ ...flight, airline })} /></Field>
             <Field label="Classe do voo"><select className="input" value={flight.cabinClass ?? "Econômica"} onChange={(e) => onChange({ ...flight, cabinClass: e.target.value })}><option>Primeira Classe</option><option>Executiva</option><option>Econômica Premium</option><option>Econômica</option></select></Field>
             <Field label="Origem"><AirportInput value={flight.from} onChange={(from) => onChange({ ...flight, from })} /></Field>
             <Field label="Destino"><AirportInput value={flight.to} onChange={(to) => onChange({ ...flight, to })} /></Field>
             <Field label="Partida"><TimeInput value={flight.departTime} onChange={(departTime) => onChange({ ...flight, departTime })} /></Field>
             <Field label="Chegada"><TimeInput value={flight.arriveTime} onChange={(arriveTime) => onChange({ ...flight, arriveTime })} /></Field>
           </div> : null}
-          {(flight.code || flight.from || flight.to || flight.airline) ? <FlightSummaryCard flight={flight} /> : null}
+          {showSummary && (flight.code || flight.from || flight.to || flight.airline) ? <FlightSummaryCard flight={flight} /> : null}
           <div className="flight-segments">
             {segments.map((segment, index) => <FlightSegmentCard key={segment.segmentId ?? index} segment={segment} index={index + 2} onChange={(next) => onSegmentsChange(segments.map((item, itemIndex) => itemIndex === index ? next : item))} onRemove={() => onSegmentsChange(segments.filter((_, itemIndex) => itemIndex !== index))} />)}
             <button className="light-mini add-flight-segment" type="button" onClick={() => onSegmentsChange([...segments, { ...emptyFlight(), segmentId: uid() }])}>＋ Adicionar trecho</button>
@@ -2469,6 +2466,20 @@ function FlightSummaryCard({ flight }: { flight: Flight }) {
   </article>;
 }
 const flightAirlines = ["Azul", "GOL", "LATAM", "KLM", "Aerolineas Argentinas", "Air China", "Royal Air Maroc", "Iberia", "TAP"];
+function AirlinePicker({ value, onChange }: { value: string; onChange: (airline: string) => void }) {
+  const [customMode, setCustomMode] = useState(() => Boolean(value && !flightAirlines.includes(value)));
+  return <div className="airline-picker-field">
+    <select className="input" value={customMode ? "__custom__" : value} onChange={(event) => {
+      if (event.target.value === "__custom__") { setCustomMode(true); onChange(""); }
+      else { setCustomMode(false); onChange(event.target.value); }
+    }}>
+      <option value="">Selecione uma companhia</option>
+      {flightAirlines.map((airline) => <option key={airline} value={airline}>{airline}</option>)}
+      <option value="__custom__">Outra companhia...</option>
+    </select>
+    {customMode ? <input className="input" placeholder="Digite o nome da companhia" value={value} onChange={(event) => onChange(event.target.value)} autoFocus /> : null}
+  </div>;
+}
 function FlightSegmentCard({ segment, index, onChange, onRemove }: { segment: Flight; index: number; onChange: (flight: Flight) => void; onRemove: () => void }) {
   return <article className="flight-segment-card">
     <div className="flight-segment-heading"><strong>Trecho {index}</strong><button type="button" className="flight-trash" onClick={onRemove} aria-label={`Remover trecho ${index}`} title="Remover trecho"><TrashIcon /></button></div>
@@ -2476,7 +2487,7 @@ function FlightSegmentCard({ segment, index, onChange, onRemove }: { segment: Fl
       <Field label="Código do voo"><input className="input" placeholder="IATA (ex.: AD4191)" value={segment.code} onChange={(e) => onChange({ ...segment, code: e.target.value.toUpperCase() })} /></Field>
       <SingleDatePicker label="Data de partida" value={segment.date} onChange={(date) => onChange({ ...segment, date })} />
       <Field label="Classe do voo"><select className="input" value={segment.cabinClass ?? "Econômica"} onChange={(e) => onChange({ ...segment, cabinClass: e.target.value })}><option>Primeira Classe</option><option>Executiva</option><option>Econômica Premium</option><option>Econômica</option></select></Field>
-      <Field label="Companhia aérea"><input className="input" list="flight-airline-suggestions" placeholder="Selecione ou digite uma companhia" value={segment.airline} onChange={(e) => onChange({ ...segment, airline: e.target.value })} /></Field>
+      <Field label="Companhia aérea"><AirlinePicker value={segment.airline} onChange={(airline) => onChange({ ...segment, airline })} /></Field>
       <Field label="Saindo"><AirportInput value={segment.from} onChange={(from) => onChange({ ...segment, from })} /></Field>
       <Field label="Chegada"><AirportInput value={segment.to} onChange={(to) => onChange({ ...segment, to })} /></Field>
       <Field label="Partida"><TimeInput value={segment.departTime} onChange={(departTime) => onChange({ ...segment, departTime })} /></Field>
@@ -3611,7 +3622,6 @@ function IssueEditor({
           </div>
           {issue.issueType === "flight" ? (
             <SectionBand icon="✈" title="Emissões de voo" action="Nova viagem" onImport={() => setQuoteImportOpen(true)}>
-              <datalist id="flight-airline-suggestions">{flightAirlines.map((airline) => <option key={airline} value={airline} />)}</datalist>
               <CompactFlightBlock
                 title="Viagem de ida"
                 flight={issue.flightOut}
@@ -3622,6 +3632,7 @@ function IssueEditor({
                 })}
                 segments={issue.flightOutSegments ?? []}
                 onSegmentsChange={(flightOutSegments) => onChange({ ...issue, flightOutSegments })}
+                showSummary={false}
               />
               <CompactFlightBlock
                 title="Viagem de volta"
@@ -3633,6 +3644,7 @@ function IssueEditor({
                 })}
                 segments={issue.flightBackSegments ?? []}
                 onSegmentsChange={(flightBackSegments) => onChange({ ...issue, flightBackSegments })}
+                showSummary={false}
               />
             </SectionBand>
           ) : issue.issueType === "car" ? (
