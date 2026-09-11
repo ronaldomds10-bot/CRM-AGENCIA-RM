@@ -23,8 +23,10 @@ type Passenger = { id: string; name: string; surname: string; ticket: string; ch
 let airportCache: Airport[] | null = null;
 
 type Flight = {
+  segmentId?: string;
   code: string;
   airline: string;
+  cabinClass?: string;
   from: string;
   to: string;
   departTime: string;
@@ -123,6 +125,8 @@ type Quote = {
   issue: IssueDetails;
   flightOut: Flight;
   flightBack: Flight;
+  flightOutSegments?: Flight[];
+  flightBackSegments?: Flight[];
   car: CarReservation;
   hotel: HotelReservation;
   insurance: InsuranceReservation;
@@ -443,6 +447,7 @@ function defaultQuote(): Quote {
     },
     notes: "Opção 1 - PIX R$ 4.800,00\nOpção 2 - Entrada + parcelamento.",
     flightOut: defaultFlight(),
+    flightOutSegments: [],
     flightBack: defaultFlight({
       from: "FOR - Fortaleza/CE",
       to: "GRU - São Paulo/SP",
@@ -450,6 +455,7 @@ function defaultQuote(): Quote {
       arriveTime: "16:20",
       date: todayIso(22),
     }),
+    flightBackSegments: [],
     car: {
       pickupDate: todayIso(12),
       returnDate: todayIso(22),
@@ -662,6 +668,8 @@ function normalizeQuote(value: Partial<Quote>): Quote {
     issue: { ...base.issue, ...value.issue },
     flightOut: normalizeFlight({ ...base.flightOut, ...value.flightOut, ...placeholderFlightFields }),
     flightBack: normalizeFlight({ ...base.flightBack, ...value.flightBack, ...placeholderFlightFields }),
+    flightOutSegments: (value.flightOutSegments ?? []).map((flight) => normalizeFlight({ ...emptyFlight(), ...flight, segmentId: flight.segmentId ?? uid() })),
+    flightBackSegments: (value.flightBackSegments ?? []).map((flight) => normalizeFlight({ ...emptyFlight(), ...flight, segmentId: flight.segmentId ?? uid() })),
     car: { ...base.car, ...value.car },
     hotel: { ...base.hotel, ...value.hotel },
     insurance: { ...base.insurance, ...value.insurance },
@@ -784,8 +792,12 @@ function openQuotePdfLegacy(quote: Quote, settings: AppSettings) {
     text(`Mochila: ${flight.backpacks}`, 164, y + 48, 7, dark);
     y += 61;
   };
-  if (quote.flightOut.from || quote.flightOut.to || quote.flightOut.code) renderFlight(quote.flightOut, "Viagem de ida");
-  if (quote.flightBack.from || quote.flightBack.to || quote.flightBack.code) renderFlight(quote.flightBack, "Viagem de volta");
+  [quote.flightOut, ...(quote.flightOutSegments ?? [])].forEach((flight, index) => {
+    if (flight.from || flight.to || flight.code) renderFlight(flight, index ? `Viagem de ida · trecho ${index + 1}` : "Viagem de ida");
+  });
+  [quote.flightBack, ...(quote.flightBackSegments ?? [])].forEach((flight, index) => {
+    if (flight.from || flight.to || flight.code) renderFlight(flight, index ? `Viagem de volta · trecho ${index + 1}` : "Viagem de volta");
+  });
   if (quote.showValues) { card(15, y, 180, 20); text("Valor do orçamento", 22, y + 8, 8, muted); text(money(quote.cashPrice), 22, y + 15, 13, [5, 135, 83], "bold"); text(`${quote.installments}  ${quote.paymentOption}`, 90, y + 13, 8, dark); y += 27; }
   if (quote.notes) {
     if (y > 245) { pdf.addPage(); pdf.setFillColor(248, 250, 252); pdf.rect(0, 0, 210, 297, "F"); y = 18; }
@@ -864,7 +876,7 @@ async function openQuotePdf(quote: Quote, settings: AppSettings) {
   const svgToPng = async (url: string) => url ? svgMarkupToPng(await fetch(url).then((response) => response.text())) : "";
   const airlineAsset = (airline: string) => airline.toLowerCase().includes("latam") ? "/airlines/latam.svg" : airline.toLowerCase().includes("azul") ? "/airlines/azul.svg" : "";
   const airlineLogos = new Map<string, string>();
-  for (const airline of [quote.flightOut.airline, quote.flightBack.airline]) if (airline && !airlineLogos.has(airline)) airlineLogos.set(airline, await svgToPng(airlineAsset(airline)));
+  for (const airline of [quote.flightOut, ...(quote.flightOutSegments ?? []), quote.flightBack, ...(quote.flightBackSegments ?? [])].map((flight) => flight.airline)) if (airline && !airlineLogos.has(airline)) airlineLogos.set(airline, await svgToPng(airlineAsset(airline)));
   const golLogoPng = await fetch("/airlines/gol.svg")
     .then((response) => response.text())
     .then((svg) => svgMarkupToPng(
@@ -914,6 +926,7 @@ async function openQuotePdf(quote: Quote, settings: AppSettings) {
   const ensureSpace = (height: number) => { if (y + height <= 289) return; pdf.addPage(); page(); y = 12; };
   const renderFlight = (flight: Flight, title: string) => {
     ensureSpace(83);
+    const isOutbound = title.startsWith("Ida");
     card(margin, y, contentWidth, 78, 4);
     const airline = flight.airline || "Companhia aérea";
     if (airline.toLowerCase().includes("gol")) {
@@ -926,13 +939,13 @@ async function openQuotePdf(quote: Quote, settings: AppSettings) {
       else { pdf.setFillColor(...blue); pdf.roundedRect(15, y + 7, 40, 16, 4, 4, "F"); center(airline.toUpperCase(), 35, y + 18, 10, [255,255,255], "bold", 34); }
     }
     if (takeoffPng) pdf.addImage(takeoffPng, "PNG", 70, y + 7, 5.5, 5.5, undefined, "FAST");
-    text(title === "Ida" ? "Saindo de" : "Com destino", 78, y + 10, 4.7, muted); text(`${airportName(flight.from)} (${airportCode(flight.from)})`, 78, y + 15, 6.3, ink, "bold", { maxWidth: 39 });
+    text(isOutbound ? "Saindo de" : "Com destino", 78, y + 10, 4.7, muted); text(`${airportName(flight.from)} (${airportCode(flight.from)})`, 78, y + 15, 6.3, ink, "bold", { maxWidth: 39 });
     if (takeoffPng) pdf.addImage(takeoffPng, "PNG", 112, y + 7, 5.5, 5.5, undefined, "FAST");
-    text(title === "Ida" ? "Com destino" : "Saindo de", 120, y + 10, 4.7, muted); text(`${airportName(flight.to)} (${airportCode(flight.to)})`, 120, y + 15, 6.3, ink, "bold", { maxWidth: 39 });
-    text("Classe", 174, y + 10, 4.7, muted); text("Econômica", 174, y + 16, 7.5, muted, "bold");
+    text(isOutbound ? "Com destino" : "Saindo de", 120, y + 10, 4.7, muted); text(`${airportName(flight.to)} (${airportCode(flight.to)})`, 120, y + 15, 6.3, ink, "bold", { maxWidth: 39 });
+    text("Classe", 174, y + 10, 4.7, muted); text(flight.cabinClass || "Econômica", 174, y + 16, 7.5, muted, "bold");
     if (usersPng) pdf.addImage(usersPng, "PNG", 174, y + 19.5, 5, 5, undefined, "FAST");
     text(String(flight.passengers.length), 181, y + 24, 7.5, muted, "bold");
-    center(`em ${fullDate(flight.date || (title === "Ida" ? quote.startDate : quote.endDate))}`, 112, y + 23, 5.8, muted);
+    center(`em ${fullDate(flight.date || (isOutbound ? quote.startDate : quote.endDate))}`, 112, y + 23, 5.8, muted);
     pdf.setDrawColor(225, 228, 234); pdf.line(15, y + 28, 195, y + 28);
     center(flight.departTime || "--:--", 49, y + 37, 10, ink, "bold"); center(`${airportCode(flight.from)} em ${airportName(flight.from)}`, 49, y + 42, 5.8, muted, "normal", 50);
     center("Duração", 105, y + 38, 4.8, muted); center(duration(flight.departTime, flight.arriveTime), 105, y + 44, 5.8, ink, "bold");
@@ -946,9 +959,11 @@ async function openQuotePdf(quote: Quote, settings: AppSettings) {
     y += 85;
   };
   const hasFlight = (flight: Flight) => Boolean(flight.code || flight.from || flight.to || flight.date);
-  if (hasFlight(quote.flightOut)) renderFlight(syncPassengerBaggage(quote.flightOut), "Ida");
-  if (hasFlight(quote.flightBack)) renderFlight(syncPassengerBaggage(quote.flightBack), "Volta");
-  if (!hasFlight(quote.flightOut) && !hasFlight(quote.flightBack)) { openQuotePdfLegacy(quote, settings); return; }
+  const outboundFlights = [quote.flightOut, ...(quote.flightOutSegments ?? [])];
+  const returnFlights = [quote.flightBack, ...(quote.flightBackSegments ?? [])];
+  outboundFlights.forEach((flight, index) => { if (hasFlight(flight)) renderFlight(syncPassengerBaggage(flight), index ? `Ida · trecho ${index + 1}` : "Ida"); });
+  returnFlights.forEach((flight, index) => { if (hasFlight(flight)) renderFlight(syncPassengerBaggage(flight), index ? `Volta · trecho ${index + 1}` : "Volta"); });
+  if (![...outboundFlights, ...returnFlights].some(hasFlight)) { openQuotePdfLegacy(quote, settings); return; }
 
   if (quote.showValues || quote.notes) {
     ensureSpace(74);
@@ -1716,8 +1731,8 @@ function Brand() {
 }
 function SharedQuotePage({ quote, settings }: SharedQuote) {
   const date = (value: string) => value ? new Date(`${value}T12:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" }) : "Data a confirmar";
-  const hasFlight = Boolean(quote.flightOut.from || quote.flightOut.to || quote.flightOut.code);
-  const hasReturn = Boolean(quote.flightBack.from || quote.flightBack.to || quote.flightBack.code);
+  const outboundFlights = [quote.flightOut, ...(quote.flightOutSegments ?? [])].filter((flight) => flight.from || flight.to || flight.code);
+  const returnFlights = [quote.flightBack, ...(quote.flightBackSegments ?? [])].filter((flight) => flight.from || flight.to || flight.code);
   const phone = settings.contactPhone.replace(/\D/g, "");
   const calendarDate = (value: string) => value.replaceAll("-", "");
   const calendarEnd = quote.endDate
@@ -1748,7 +1763,7 @@ function SharedQuotePage({ quote, settings }: SharedQuote) {
           {phone ? <a href={`https://wa.me/55${phone}`} target="_blank" rel="noreferrer">WhatsApp</a> : null}
           {settings.instagram ? <a href={`https://instagram.com/${settings.instagram.replace("@", "")}`} target="_blank" rel="noreferrer">Instagram</a> : null}
         </nav>
-        {hasFlight ? <section className="shared-section"><h2>✈ Voos</h2><SharedFlight flight={quote.flightOut} title="Viagem de ida" />{hasReturn ? <SharedFlight flight={quote.flightBack} title="Viagem de volta" /> : null}</section> : null}
+        {outboundFlights.length ? <section className="shared-section"><h2>✈ Voos</h2>{outboundFlights.map((flight, index) => <SharedFlight key={flight.segmentId ?? `out-${index}`} flight={flight} title={index ? `Viagem de ida · trecho ${index + 1}` : "Viagem de ida"} />)}{returnFlights.map((flight, index) => <SharedFlight key={flight.segmentId ?? `back-${index}`} flight={flight} title={index ? `Viagem de volta · trecho ${index + 1}` : "Viagem de volta"} />)}</section> : null}
         {quote.car.pickupAddress ? <section className="shared-section"><h2>Reservas de carro</h2><p><strong>Retirada:</strong> {quote.car.pickupAddress} em {date(quote.car.pickupDate)}</p><p><strong>Devolução:</strong> {quote.car.returnAddress} em {date(quote.car.returnDate)}</p><p>{quote.car.models}</p></section> : null}
         {quote.hotel.name ? <section className="shared-section"><h2>Hospedagem</h2><h3>{quote.hotel.name}</h3><p>{quote.hotel.address}</p><p>Check-in {date(quote.hotel.checkin)} · Check-out {date(quote.hotel.checkout)}</p></section> : null}
         {quote.showValues ? <section className="shared-section shared-price"><h2>Investimento</h2><strong>{money(quote.cashPrice)}</strong><p>{quote.installments} · {quote.paymentOption}</p></section> : null}
@@ -2344,7 +2359,7 @@ function FlightsForm({
   quote: Quote;
   onChange: (q: Quote) => void;
 }) {
-  const [showReturn, setShowReturn] = useState(false);
+  const [showReturn, setShowReturn] = useState(() => Boolean(quote.flightBack.code || quote.flightBack.from || quote.flightBack.to || quote.flightBack.date || quote.flightBackSegments?.length));
   return (
     <div className="flight-booking">
       <div className="flight-booking-bar">
@@ -2358,12 +2373,14 @@ function FlightsForm({
         title="Viagem de ida"
         flight={quote.flightOut}
         onChange={(flightOut) => onChange({ ...quote, flightOut })}
+        segments={quote.flightOutSegments ?? []}
+        onSegmentsChange={(flightOutSegments) => onChange({ ...quote, flightOutSegments })}
       />
-      {showReturn ? <CompactFlightBlock title="Viagem de volta" flight={quote.flightBack} onChange={(flightBack) => onChange({ ...quote, flightBack })} onRemove={() => setShowReturn(false)} /> : null}
+      {showReturn ? <CompactFlightBlock title="Viagem de volta" flight={quote.flightBack} onChange={(flightBack) => onChange({ ...quote, flightBack })} segments={quote.flightBackSegments ?? []} onSegmentsChange={(flightBackSegments) => onChange({ ...quote, flightBackSegments })} onRemove={() => { onChange({ ...quote, flightBack: emptyFlight(), flightBackSegments: [] }); setShowReturn(false); }} /> : null}
     </div>
   );
 }
-function CompactFlightBlock({ title, flight, onChange, onRemove }: { title: string; flight: Flight; onChange: (flight: Flight) => void; onRemove?: () => void }) {
+function CompactFlightBlock({ title, flight, onChange, segments, onSegmentsChange, onRemove }: { title: string; flight: Flight; onChange: (flight: Flight) => void; segments: Flight[]; onSegmentsChange: (segments: Flight[]) => void; onRemove?: () => void }) {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const changePassengers = (passengers: Passenger[]) => onChange(syncPassengerBaggage({ ...flight, passengers }));
   const searchAirline = () => {
@@ -2389,11 +2406,16 @@ function CompactFlightBlock({ title, flight, onChange, onRemove }: { title: stri
           </div>
           {detailsOpen ? <div className="flight-extra-fields">
             <Field label="Companhia"><input className="input" placeholder="Ex.: Azul" value={flight.airline} onChange={(e) => onChange({ ...flight, airline: e.target.value })} /></Field>
+            <Field label="Classe do voo"><select className="input" value={flight.cabinClass ?? "Econômica"} onChange={(e) => onChange({ ...flight, cabinClass: e.target.value })}><option>Primeira Classe</option><option>Executiva</option><option>Econômica Premium</option><option>Econômica</option></select></Field>
             <Field label="Origem"><AirportInput value={flight.from} onChange={(from) => onChange({ ...flight, from })} /></Field>
             <Field label="Destino"><AirportInput value={flight.to} onChange={(to) => onChange({ ...flight, to })} /></Field>
             <Field label="Partida"><TimeInput value={flight.departTime} onChange={(departTime) => onChange({ ...flight, departTime })} /></Field>
             <Field label="Chegada"><TimeInput value={flight.arriveTime} onChange={(arriveTime) => onChange({ ...flight, arriveTime })} /></Field>
           </div> : null}
+          <div className="flight-segments">
+            {segments.map((segment, index) => <FlightSegmentCard key={segment.segmentId ?? index} segment={segment} index={index + 2} onChange={(next) => onSegmentsChange(segments.map((item, itemIndex) => itemIndex === index ? next : item))} onRemove={() => onSegmentsChange(segments.filter((_, itemIndex) => itemIndex !== index))} />)}
+            <button className="light-mini add-flight-segment" type="button" onClick={() => onSegmentsChange([...segments, { ...emptyFlight(), segmentId: uid() }])}>＋ Adicionar trecho</button>
+          </div>
         </div>
         <div className="compact-passenger-panel">
           <div className="compact-passenger-list">
@@ -2422,6 +2444,22 @@ function CompactFlightBlock({ title, flight, onChange, onRemove }: { title: stri
       </div>
     </section>
   );
+}
+const flightAirlines = ["Azul", "GOL", "LATAM", "KLM", "Aerolineas Argentinas", "Air China", "Royal Air Maroc", "Iberia", "TAP"];
+function FlightSegmentCard({ segment, index, onChange, onRemove }: { segment: Flight; index: number; onChange: (flight: Flight) => void; onRemove: () => void }) {
+  return <article className="flight-segment-card">
+    <div className="flight-segment-heading"><strong>Trecho {index}</strong><button type="button" className="flight-trash" onClick={onRemove} aria-label={`Remover trecho ${index}`} title="Remover trecho"><TrashIcon /></button></div>
+    <div className="flight-segment-grid">
+      <Field label="Código do voo"><input className="input" placeholder="IATA (ex.: AD4191)" value={segment.code} onChange={(e) => onChange({ ...segment, code: e.target.value.toUpperCase() })} /></Field>
+      <SingleDatePicker label="Data de partida" value={segment.date} onChange={(date) => onChange({ ...segment, date })} />
+      <Field label="Classe do voo"><select className="input" value={segment.cabinClass ?? "Econômica"} onChange={(e) => onChange({ ...segment, cabinClass: e.target.value })}><option>Primeira Classe</option><option>Executiva</option><option>Econômica Premium</option><option>Econômica</option></select></Field>
+      <Field label="Companhia aérea"><select className="input" value={segment.airline} onChange={(e) => onChange({ ...segment, airline: e.target.value })}><option value="">Selecione</option>{flightAirlines.map((airline) => <option key={airline}>{airline}</option>)}</select></Field>
+      <Field label="Saindo"><AirportInput value={segment.from} onChange={(from) => onChange({ ...segment, from })} /></Field>
+      <Field label="Chegada"><AirportInput value={segment.to} onChange={(to) => onChange({ ...segment, to })} /></Field>
+      <Field label="Partida"><TimeInput value={segment.departTime} onChange={(departTime) => onChange({ ...segment, departTime })} /></Field>
+      <Field label="Chegada"><TimeInput value={segment.arriveTime} onChange={(arriveTime) => onChange({ ...segment, arriveTime })} /></Field>
+    </div>
+  </article>;
 }
 function FlightBlock({
   title,
