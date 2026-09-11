@@ -670,17 +670,7 @@ function normalizeQuote(value: Partial<Quote>): Quote {
     insuranceOptions: value.insuranceOptions ?? [],
   };
 }
-function readData(): CRMData {
-  try {
-    const currentData = localStorage.getItem(STORAGE_KEY);
-    const legacyData = localStorage.getItem(LEGACY_STORAGE_KEY);
-    const raw = currentData ?? legacyData;
-    if (!raw) return defaultData();
-    if (!currentData && legacyData) {
-      localStorage.setItem(STORAGE_KEY, legacyData);
-      localStorage.removeItem(LEGACY_STORAGE_KEY);
-    }
-    const parsed = JSON.parse(raw) as Partial<CRMData>;
+function normalizeData(parsed: Partial<CRMData>): CRMData {
     const storedSuppliers = (Array.isArray(parsed.suppliers)
       ? parsed.suppliers
       : defaultData().suppliers
@@ -709,6 +699,18 @@ function readData(): CRMData {
       events: Array.isArray(parsed.events) ? parsed.events : defaultData().events,
       settings: { ...defaultData().settings, ...parsed.settings },
     };
+}
+function readData(): CRMData {
+  try {
+    const currentData = localStorage.getItem(STORAGE_KEY);
+    const legacyData = localStorage.getItem(LEGACY_STORAGE_KEY);
+    const raw = currentData ?? legacyData;
+    if (!raw) return defaultData();
+    if (!currentData && legacyData) {
+      localStorage.setItem(STORAGE_KEY, legacyData);
+      localStorage.removeItem(LEGACY_STORAGE_KEY);
+    }
+    return normalizeData(JSON.parse(raw) as Partial<CRMData>);
   } catch {
     return defaultData();
   }
@@ -1382,6 +1384,11 @@ export function RMApp() {
   const [issueClientFilter, setIssueClientFilter] = useState("");
   const [lightTheme, setLightTheme] = useState(false);
   const [sharedQuote, setSharedQuote] = useState<SharedQuote | null>(null);
+  const [authRequired, setAuthRequired] = useState(false);
+  const [authVersion, setAuthVersion] = useState(0);
+  const [remoteEnabled, setRemoteEnabled] = useState(false);
+  const [remoteError, setRemoteError] = useState("");
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const shared = readSharedQuote();
@@ -1390,12 +1397,57 @@ export function RMApp() {
       setReady(true);
       return;
     }
-    setData(readData());
-    setReady(true);
-  }, []);
+    const localData = readData();
+    setData(localData);
+    let active = true;
+    void (async () => {
+      try {
+        const response = await fetch("/api/crm-state", { cache: "no-store" });
+        if (!active) return;
+        if (response.status === 401) {
+          setAuthRequired(true);
+          setReady(true);
+          return;
+        }
+        if (!response.ok) throw new Error("Banco de dados indisponível.");
+        const payload = await response.json() as { data: Partial<CRMData> | null };
+        if (payload.data) setData(normalizeData(payload.data));
+        else {
+          const initialSave = await fetch("/api/crm-state", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(localData),
+          });
+          if (!initialSave.ok) throw new Error("Não foi possível importar os dados locais.");
+        }
+        setAuthRequired(false);
+        setRemoteEnabled(true);
+        setRemoteError("");
+      } catch (error) {
+        if (active) setRemoteError(error instanceof Error ? error.message : "Falha de sincronização.");
+      } finally {
+        if (active) setReady(true);
+      }
+    })();
+    return () => { active = false; };
+  }, [authVersion]);
   useEffect(() => {
-    if (ready) saveData(data);
-  }, [data, ready]);
+    if (!ready) return;
+    saveData(data);
+    if (!remoteEnabled) return;
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      void fetch("/api/crm-state", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      }).then((response) => {
+        if (!response.ok) throw new Error("Falha ao salvar no banco.");
+        setRemoteError("");
+      }).catch(() => setRemoteError("Alterações salvas apenas neste dispositivo. Tentaremos sincronizar novamente."));
+    }, 700);
+    return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
+  }, [data, ready, remoteEnabled]);
 
   const totals = useMemo(() => {
     const issued = data.quotes.filter(
@@ -1481,7 +1533,8 @@ export function RMApp() {
   }
 
   if (!ready)
-    return <FullState title="Carregando" message="Abrindo base local..." />;
+    return <FullState title="Carregando" message="Conectando ao banco de dados..." />;
+  if (authRequired) return <LoginState onSuccess={() => setAuthVersion((value) => value + 1)} />;
   if (sharedQuote) return <SharedQuotePage {...sharedQuote} />;
   return (
     <div
@@ -1538,6 +1591,11 @@ export function RMApp() {
           {toast ? (
             <div className="mb-4 rounded-md border border-[#ffc83d]/40 bg-[#271f0b] px-3 py-2 text-sm font-bold text-[#ffe49a]">
               {toast}
+            </div>
+          ) : null}
+          {remoteError ? (
+            <div className="mb-4 rounded-md border border-amber-400/40 bg-amber-950/40 px-3 py-2 text-sm text-amber-100" role="status">
+              {remoteError}
             </div>
           ) : null}
           {view === "dashboard" ? (
@@ -5493,5 +5551,53 @@ function FullState({ title, message }: { title: string; message: string }) {
         <p>{message}</p>
       </div>
     </div>
+  );
+}
+function LoginState({ onSuccess }: { onSuccess: () => void }) {
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const submit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setLoading(true);
+    setError("");
+    try {
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+      });
+      const body = await response.json().catch(() => ({})) as { error?: string };
+      if (!response.ok) throw new Error(body.error || "Não foi possível entrar.");
+      onSuccess();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Não foi possível entrar.");
+    } finally {
+      setLoading(false);
+    }
+  };
+  return (
+    <main className="grid min-h-screen place-items-center bg-[#020916] px-4 text-white">
+      <form className="w-full max-w-sm rounded-xl border border-[#1c3148] bg-[#030b16] p-6 shadow-2xl" onSubmit={submit}>
+        <p className="text-sm font-bold uppercase tracking-[0.18em] text-[#ffc83d]">RM Partiu Viagens</p>
+        <h1 className="mt-2 text-2xl font-bold">Acessar o CRM</h1>
+        <p className="mt-2 text-sm text-[#9fc8ee]">Use a senha administrativa para acessar os dados da agência.</p>
+        <label className="mt-5 block text-sm font-bold" htmlFor="crm-password">Senha</label>
+        <input
+          id="crm-password"
+          className="input mt-2"
+          type="password"
+          autoComplete="current-password"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+          required
+          autoFocus
+        />
+        {error ? <p className="mt-3 text-sm text-red-300" role="alert">{error}</p> : null}
+        <button className="gold-button mt-5 w-full" type="submit" disabled={loading}>
+          {loading ? "Entrando..." : "Entrar"}
+        </button>
+      </form>
+    </main>
   );
 }

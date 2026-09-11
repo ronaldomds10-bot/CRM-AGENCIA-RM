@@ -6,15 +6,15 @@ Central operacional da RM Partiu Viagens para gerenciar orçamentos, emissões, 
 
 - Next.js
 - React
-- Supabase Auth
-- Supabase Postgres
+- PostgreSQL no Railway
+- Sessão segura com cookie HttpOnly
 - Row Level Security
 - TypeScript
 - Tailwind CSS
 
 ## Estrutura atual
 
-A interface funciona com persistência local no navegador e backup em JSON. A integração remota deve receber uma migration própria do CRM quando o projeto Supabase definitivo for conectado.
+A interface sincroniza os dados com PostgreSQL por uma API privada do Next.js. O armazenamento local permanece como contingência e também importa automaticamente a base do navegador no primeiro acesso a um banco vazio.
 
 Principais módulos:
 
@@ -31,20 +31,14 @@ Principais módulos:
 Crie um arquivo `.env.local` baseado em `.env.example`:
 
 ```bash
-NEXT_PUBLIC_SUPABASE_URL=
-NEXT_PUBLIC_SUPABASE_ANON_KEY=
-SUPABASE_SERVICE_ROLE_KEY=
+DATABASE_URL=
+CRM_ACCESS_PASSWORD=
+CRM_AUTH_SECRET=
 ```
 
 Nunca versione `.env`, `.env.local`, `.env.production` ou qualquer arquivo com chaves reais.
 
 ## Como rodar localmente
-
-Com a Supabase CLI instalada:
-
-```bash
-supabase start
-```
 
 Instale as dependencias e rode o servidor local:
 
@@ -55,7 +49,6 @@ npm run dev
 
 ## Próximos passos
 
-- Criar uma migration própria para os módulos da agência.
-- Integrar autenticação e persistência remota.
-- Substituir o armazenamento local pelo Supabase mantendo o backup em JSON.
+- Configurar `DATABASE_URL`, `CRM_ACCESS_PASSWORD` e `CRM_AUTH_SECRET` no ambiente de produção.
+- Manter backups periódicos do PostgreSQL e pelo exportador JSON do sistema.
 - Adicionar geração final de PDF e compartilhamento de orçamentos.
