@@ -1150,7 +1150,17 @@ async function openCarIssuePdf(issue: Quote, settings: AppSettings) {
   };
   const date = (value: string) => value ? new Date(`${value}T12:00:00`).toLocaleDateString("pt-BR") : "A confirmar";
   const shortDate = (value: string) => value ? new Date(`${value}T12:00:00`).toLocaleDateString("pt-BR", { day: "numeric", month: "long", year: "numeric" }) : "A confirmar";
+  const periodLabel = (() => {
+    if (!issue.car.pickupDate || !issue.car.returnDate) return `${shortDate(issue.car.pickupDate)} – ${shortDate(issue.car.returnDate)}`;
+    const start = new Date(`${issue.car.pickupDate}T12:00:00`);
+    const end = new Date(`${issue.car.returnDate}T12:00:00`);
+    if (start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear()) return `${start.getDate()} — ${end.getDate()} de ${end.toLocaleDateString("pt-BR", { month: "long", year: "numeric" })}`;
+    return `${shortDate(issue.car.pickupDate)} – ${shortDate(issue.car.returnDate)}`;
+  })();
   const days = issue.car.pickupDate && issue.car.returnDate ? Math.max(1, Math.ceil((new Date(`${issue.car.returnDate}T12:00:00`).getTime() - new Date(`${issue.car.pickupDate}T12:00:00`).getTime()) / 86400000)) : 0;
+  const carIcon = (x: number, y: number) => { pdf.setDrawColor(...ink); pdf.setLineWidth(0.7); pdf.roundedRect(x, y + 2, 9, 4, 1, 1); pdf.line(x + 2, y + 2, x + 3.5, y); pdf.line(x + 3.5, y, x + 7, y); pdf.line(x + 7, y, x + 8, y + 2); pdf.circle(x + 2, y + 7, 1); pdf.circle(x + 7, y + 7, 1); };
+  const pinIcon = (x: number, y: number) => { pdf.setDrawColor(...ink); pdf.setLineWidth(0.55); pdf.circle(x, y, 2); pdf.circle(x, y, 0.65); pdf.line(x - 1.4, y + 1.4, x, y + 3.4); pdf.line(x, y + 3.4, x + 1.4, y + 1.4); };
+  const featureIcon = (x: number, y: number, index: number) => { pdf.setDrawColor(...ink); pdf.setLineWidth(0.45); if (index % 3 === 0) { pdf.circle(x, y, 2); pdf.line(x - 2.8, y, x + 2.8, y); pdf.line(x, y - 2.8, x, y + 2.8); } else if (index % 3 === 1) { pdf.roundedRect(x - 2, y - 2, 4, 4, 0.6, 0.6); } else { pdf.circle(x - 1.2, y - 1, 0.8); pdf.circle(x + 1.2, y - 1, 0.8); pdf.line(x - 2.5, y + 2, x - 2, y); pdf.line(x - 2, y, x + 2, y); pdf.line(x + 2, y, x + 2.5, y + 2); } };
   pdf.setFillColor(255, 255, 255); pdf.rect(0, 0, 297, 210, "F");
   let logoRendered = false;
   if (issue.issue.showLogo && settings.logoDataUrl) {
@@ -1159,30 +1169,30 @@ async function openCarIssuePdf(issue: Quote, settings: AppSettings) {
   if (!logoRendered) { pdf.setFillColor(255, 105, 0); pdf.roundedRect(10, 10, 36, 36, 5, 5, "F"); text("RM", 28, 30, 16, [255, 255, 255], "bold", { align: "center" }); text("VIAGENS", 28, 39, 5, [255, 255, 255], "bold", { align: "center" }); }
   const qrValue = issue.qrContent || issue.issue.locatorLink || issue.issue.locator;
   const qrImage = qrValue ? await QRCode.toDataURL(qrValue, { margin: 0, width: 320, errorCorrectionLevel: "M" }) : "";
-  text("Seu localizador é", 245, 21, 6, muted, "normal", { align: "right" });
-  text(issue.issue.locator || "NÃO INFORMADO", 245, 29, 10, ink, "bold", { align: "right" });
-  text("Clique ou escaneie o QR Code", 245, 36, 5, muted, "normal", { align: "right" });
+  text("Seu localizador é", 245, 21, 7, muted, "normal", { align: "right" });
+  text(issue.issue.locator || "NÃO INFORMADO", 245, 29, 11, ink, "bold", { align: "right" });
+  text("Clique ou escaneie o QR Code", 245, 36, 5.8, muted, "normal", { align: "right" });
   if (qrImage) pdf.addImage(qrImage, "PNG", 252, 15, 24, 24, undefined, "FAST");
   else { pdf.setDrawColor(...border); pdf.rect(252, 15, 24, 24); text("QR", 264, 29, 9, muted, "bold", { align: "center" }); }
 
-  text("▰", 10, 66, 13, ink, "bold"); text("Carros", 24, 66, 13, ink, "bold");
+  carIcon(10, 58); text("Carros", 24, 66, 14, ink, "bold");
   pdf.setDrawColor(...border); pdf.setFillColor(255, 255, 255); pdf.roundedRect(10, 73, 267, 109, 7, 7, "FD");
-  pdf.setFillColor(...ink); pdf.roundedRect(19, 82, 59, 9, 4.5, 4.5, "F"); text(`${shortDate(issue.car.pickupDate)} – ${shortDate(issue.car.returnDate)}`, 48.5, 88, 6, [255, 255, 255], "normal", { align: "center" });
-  pdf.roundedRect(82, 82, 28, 9, 4.5, 4.5, "F"); text(days ? `${days} diária${days === 1 ? "" : "s"}` : "Diárias", 96, 88, 6, [255, 255, 255], "normal", { align: "center" });
-  text("◉  Retirada", 19, 102, 8, ink, "bold"); text("◉  Devolução", 145, 102, 8, ink, "bold");
-  text(`${date(issue.car.pickupDate)} • ${issue.car.pickupTime || "--:--"}`, 19, 111, 6.7, ink);
-  text(`${date(issue.car.returnDate)} • ${issue.car.returnTime || "--:--"}`, 145, 111, 6.7, ink);
+  pdf.setFillColor(...ink); pdf.roundedRect(19, 82, 62, 10, 5, 5, "F"); text(periodLabel, 50, 88.7, 7, [255, 255, 255], "normal", { align: "center" });
+  pdf.roundedRect(86, 82, 29, 10, 5, 5, "F"); text(days ? `${days} diária${days === 1 ? "" : "s"}` : "Diárias", 100.5, 88.7, 7, [255, 255, 255], "normal", { align: "center" });
+  pinIcon(21, 101); text("Retirada", 26, 103, 9, ink, "bold"); pinIcon(147, 101); text("Devolução", 152, 103, 9, ink, "bold");
+  text(`${date(issue.car.pickupDate)} • ${issue.car.pickupTime || "--:--"}`, 19, 112, 7.5, ink);
+  text(`${date(issue.car.returnDate)} • ${issue.car.returnTime || "--:--"}`, 145, 112, 7.5, ink);
   const pickupLines = pdf.splitTextToSize(issue.car.pickupAddress || "Local de retirada a confirmar", 112) as string[];
   const returnLines = pdf.splitTextToSize(issue.car.returnAddress || issue.car.pickupAddress || "Local de devolução a confirmar", 112) as string[];
-  pickupLines.slice(0, 2).forEach((line, index) => text(line, 19, 118 + index * 5, 6.2, ink));
-  returnLines.slice(0, 2).forEach((line, index) => text(line, 145, 118 + index * 5, 6.2, ink));
-  text("▰  Modelos", 19, 137, 8, ink, "bold"); text(issue.car.models || "Modelo a confirmar", 19, 145, 7.2, muted);
+  pickupLines.slice(0, 2).forEach((line, index) => text(line, 19, 119 + index * 5, 7, ink));
+  returnLines.slice(0, 2).forEach((line, index) => text(line, 145, 119 + index * 5, 7, ink));
+  carIcon(19, 133); text("Modelos", 31, 141, 9, ink, "bold"); text(issue.car.models || "Modelo a confirmar", 19, 150, 8.2, muted);
   const features = [
     issue.car.airConditioning && "Ar condicionado", issue.car.airbag && "Air Bag", `${issue.car.passengers || 0} lugares`, `${issue.car.doors || 0} portas`,
     issue.car.powerSteering && "Direção elétrica", issue.car.electricLocks && "Trava elétrica", issue.car.automatic && "Transmissão automática", issue.car.abs && "Freio ABS", issue.car.electricWindows && "Vidros elétricos",
   ].filter(Boolean) as string[];
-  features.forEach((feature, index) => text(`◇  ${feature}`, 19 + (index % 5) * 49, 157 + Math.floor(index / 5) * 10, 7, ink));
-  text(`Esta reserva ${issue.car.refundable ? "é" : "não é"} reembolsável`, 19, 174, 7, muted);
+  features.forEach((feature, index) => { const x = 21 + (index % 5) * 49; const y = 161 + Math.floor(index / 5) * 11; featureIcon(x, y - 1.5, index); text(feature, x + 6, y, 7.6, ink); });
+  text(`Esta reserva ${issue.car.refundable ? "é" : "não é"} reembolsável`, 19, 178, 8, muted);
   const url = URL.createObjectURL(pdf.output("blob"));
   const popup = window.open(url, "_blank");
   if (!popup) { const link = document.createElement("a"); link.href = url; link.target = "_blank"; link.rel = "noopener noreferrer"; link.click(); }
