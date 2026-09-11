@@ -2362,6 +2362,9 @@ function FlightsForm({
   const [showReturn, setShowReturn] = useState(() => Boolean(quote.flightBack.code || quote.flightBack.from || quote.flightBack.to || quote.flightBack.date || quote.flightBackSegments?.length));
   return (
     <div className="flight-booking">
+      <datalist id="flight-airline-suggestions">
+        {flightAirlines.map((airline) => <option key={airline} value={airline} />)}
+      </datalist>
       <div className="flight-booking-bar">
         <div><span aria-hidden="true">✈</span><strong>Reservas de voo</strong></div>
         <div>
@@ -2405,7 +2408,7 @@ function CompactFlightBlock({ title, flight, onChange, segments, onSegmentsChang
             <button className="light-mini" type="button" onClick={() => setDetailsOpen((value) => !value)}>＋ Adicionar</button>
           </div>
           {detailsOpen ? <div className="flight-extra-fields">
-            <Field label="Companhia"><input className="input" placeholder="Ex.: Azul" value={flight.airline} onChange={(e) => onChange({ ...flight, airline: e.target.value })} /></Field>
+            <Field label="Companhia"><input className="input" list="flight-airline-suggestions" placeholder="Selecione ou digite uma companhia" value={flight.airline} onChange={(e) => onChange({ ...flight, airline: e.target.value })} /></Field>
             <Field label="Classe do voo"><select className="input" value={flight.cabinClass ?? "Econômica"} onChange={(e) => onChange({ ...flight, cabinClass: e.target.value })}><option>Primeira Classe</option><option>Executiva</option><option>Econômica Premium</option><option>Econômica</option></select></Field>
             <Field label="Origem"><AirportInput value={flight.from} onChange={(from) => onChange({ ...flight, from })} /></Field>
             <Field label="Destino"><AirportInput value={flight.to} onChange={(to) => onChange({ ...flight, to })} /></Field>
@@ -2453,7 +2456,7 @@ function FlightSegmentCard({ segment, index, onChange, onRemove }: { segment: Fl
       <Field label="Código do voo"><input className="input" placeholder="IATA (ex.: AD4191)" value={segment.code} onChange={(e) => onChange({ ...segment, code: e.target.value.toUpperCase() })} /></Field>
       <SingleDatePicker label="Data de partida" value={segment.date} onChange={(date) => onChange({ ...segment, date })} />
       <Field label="Classe do voo"><select className="input" value={segment.cabinClass ?? "Econômica"} onChange={(e) => onChange({ ...segment, cabinClass: e.target.value })}><option>Primeira Classe</option><option>Executiva</option><option>Econômica Premium</option><option>Econômica</option></select></Field>
-      <Field label="Companhia aérea"><select className="input" value={segment.airline} onChange={(e) => onChange({ ...segment, airline: e.target.value })}><option value="">Selecione</option>{flightAirlines.map((airline) => <option key={airline}>{airline}</option>)}</select></Field>
+      <Field label="Companhia aérea"><input className="input" list="flight-airline-suggestions" placeholder="Selecione ou digite uma companhia" value={segment.airline} onChange={(e) => onChange({ ...segment, airline: e.target.value })} /></Field>
       <Field label="Saindo"><AirportInput value={segment.from} onChange={(from) => onChange({ ...segment, from })} /></Field>
       <Field label="Chegada"><AirportInput value={segment.to} onChange={(to) => onChange({ ...segment, to })} /></Field>
       <Field label="Partida"><TimeInput value={segment.departTime} onChange={(departTime) => onChange({ ...segment, departTime })} /></Field>
