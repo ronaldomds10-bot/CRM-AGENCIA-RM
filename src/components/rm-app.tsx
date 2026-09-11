@@ -1548,7 +1548,7 @@ export function RMApp() {
   }
 
   if (!ready)
-    return <FullState title="Carregando" message="Conectando ao banco de dados..." />;
+    return <div className="min-h-screen bg-[#000918]" aria-busy="true" aria-label="Carregando aplicação" />;
   if (authRequired) return <LoginState onSuccess={() => setAuthVersion((value) => value + 1)} />;
   if (sharedQuote) return <SharedQuotePage {...sharedQuote} />;
   return (
@@ -5582,16 +5582,6 @@ function Table({
           ))}
         </tbody>
       </table>
-    </div>
-  );
-}
-function FullState({ title, message }: { title: string; message: string }) {
-  return (
-    <div className="grid min-h-screen place-items-center bg-[#020916] text-white">
-      <div className="rounded-md border border-[#1c3148] bg-[#030b16] p-5">
-        <h1>{title}</h1>
-        <p>{message}</p>
-      </div>
     </div>
   );
 }
