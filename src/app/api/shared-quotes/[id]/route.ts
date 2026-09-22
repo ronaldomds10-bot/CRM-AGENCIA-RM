@@ -23,8 +23,12 @@ export async function GET(
     const currentQuote = Array.isArray(currentData?.quotes)
       ? currentData.quotes.find((quote: { id?: string }) => quote.id === result.rows[0].quote_id)
       : null;
+    const shared = result.rows[0].payload;
+    const currentSettings = shared.sharedByRole === "user"
+      ? currentData?.userSettings?.[shared.sharedByUserId] ?? shared.settings
+      : currentData?.settings ?? shared.settings;
     const payload = currentQuote
-      ? { quote: currentQuote, settings: currentData.settings ?? result.rows[0].payload.settings }
+      ? { quote: currentQuote, settings: currentSettings }
       : result.rows[0].payload;
     const { ownerId: _ownerId, assignedUserId: _assignedUserId, ...publicQuote } = payload.quote;
     return NextResponse.json({ ...payload, quote: publicQuote }, { headers: { "Cache-Control": "no-store, max-age=0" } });

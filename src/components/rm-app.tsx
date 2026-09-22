@@ -2122,9 +2122,9 @@ export function RMApp() {
         <div className="mt-auto grid gap-1 p-3">
           {currentUser.role === "admin" ? <button className="nav-secondary" onClick={() => setView("users")}>Usuários</button> : null}
           {currentUser.role === "admin" ? <button className="nav-secondary" onClick={() => setView("billing")}>Minha assinatura</button> : null}
-          {currentUser.role === "admin" ? <button className="nav-secondary" onClick={() => setView("settings")}>
+          <button className="nav-secondary" onClick={() => setView("settings")}>
             Configurações
-          </button> : null}
+          </button>
           <button className="nav-secondary logout-button" onClick={logout} disabled={loggingOut}>
             <LogoutIcon />
             <span>{loggingOut ? "Saindo..." : "Sair do sistema"}</span>
@@ -2147,9 +2147,9 @@ export function RMApp() {
               <button className="icon-button" title="Novo orçamento" onClick={createQuote}>
                 ✣
               </button>
-              {currentUser.role === "admin" ? <button className="icon-button" title="Perfil" onClick={() => setView("settings")}>
+              <button className="icon-button" title="Perfil" onClick={() => setView("settings")}>
                 ◎
-              </button> : null}
+              </button>
               <button className="icon-button" title="Tema" onClick={() => setLightTheme((value) => !value)}>
                 ☼
               </button>
@@ -2170,9 +2170,9 @@ export function RMApp() {
                 {currentUser.role === "admin" ? <button className="nav-secondary" onClick={() => { setView("billing"); setMenuOpen(false); }}>
                   Minha assinatura
                 </button> : null}
-                {currentUser.role === "admin" ? <button className="nav-secondary" onClick={() => { setView("settings"); setMenuOpen(false); }}>
+                <button className="nav-secondary" onClick={() => { setView("settings"); setMenuOpen(false); }}>
                   Configurações
-                </button> : null}
+                </button>
                 <button className="nav-secondary logout-button" onClick={logout} disabled={loggingOut}>
                   <LogoutIcon />
                   <span>{loggingOut ? "Saindo..." : "Sair do sistema"}</span>
@@ -2285,8 +2285,9 @@ export function RMApp() {
               setData(normalized);
             }
           }} /> : null}
-          {view === "settings" && currentUser.role === "admin" ? (
+          {view === "settings" ? (
             <Settings
+              key={currentUser.id}
               settings={data.settings}
               onSave={(settings) => {
                 setData((cur) => ({ ...cur, settings }));

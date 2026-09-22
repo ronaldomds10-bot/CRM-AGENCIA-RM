@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { ensureSchema, getPool } from "@/lib/db";
-import { mergeState, visibleState, type StatePayload } from "@/lib/access";
+import { mergeState, settingsForUser, visibleState, type StatePayload } from "@/lib/access";
 
 export const runtime = "nodejs";
 const STATE_ID = "primary";
@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
     const result = await getPool().query("SELECT payload, updated_at FROM crm_state WHERE id = $1", [STATE_ID]);
     return NextResponse.json(result.rows[0]
       ? { data: visibleState(result.rows[0].payload as StatePayload, user), user, updatedAt: result.rows[0].updated_at }
-      : { data: user.role === "admin" ? null : { quotes: [], clients: [], suppliers: [], events: [], settings: {} }, user },
+      : { data: user.role === "admin" ? null : { quotes: [], clients: [], suppliers: [], events: [], settings: settingsForUser({ quotes: [], clients: [], suppliers: [], events: [], settings: {} }, user) }, user },
       { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     console.error("Falha ao carregar CRM:", error);

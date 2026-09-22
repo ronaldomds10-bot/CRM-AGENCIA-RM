@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { ensureSchema, getPool } from "@/lib/db";
-import { canAccessRecord } from "@/lib/access";
+import { canAccessRecord, settingsForUser, type StatePayload } from "@/lib/access";
 
 export const runtime = "nodejs";
 
@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
     const data = state.rows[0]?.payload;
     const quote = Array.isArray(data?.quotes) ? data.quotes.find((item: { id?: string }) => item.id === quoteId) : null;
     if (!quote || !canAccessRecord(quote, user)) return NextResponse.json({ error: "Orçamento não autorizado." }, { status: 403 });
-    const safePayload = { quote: { ...payload.quote, ownerId: quote.ownerId, assignedUserId: quote.assignedUserId }, settings: data.settings };
+    const safePayload = { quote: { ...payload.quote, ownerId: quote.ownerId, assignedUserId: quote.assignedUserId }, settings: settingsForUser(data as StatePayload, user), sharedByUserId: user.id, sharedByRole: user.role };
     const existing = await getPool().query(
       "SELECT id FROM shared_quotes WHERE quote_id = $1 ORDER BY created_at DESC LIMIT 1",
       [quoteId],

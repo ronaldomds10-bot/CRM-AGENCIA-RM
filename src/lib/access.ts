@@ -9,13 +9,33 @@ export function canAccessRecord(record: CRMRecord, user: AuthUser) {
   return user.role === "admin" || (record.ownerId || "admin") === user.id || record.assignedUserId === user.id;
 }
 
+export function settingsForUser(state: StatePayload, user: AuthUser) {
+  const agency = (state.settings || {}) as Record<string, unknown>;
+  if (user.role === "admin") return agency;
+  const saved = (state.userSettings as Record<string, Record<string, unknown>> | undefined)?.[user.id];
+  return saved || {
+    contactName: user.name,
+    contactEmail: user.email,
+    contactPhone: "",
+    companyName: "",
+    document: "",
+    instagram: "",
+    address: "",
+    logoDataUrl: "",
+    currency: agency.currency || "BRL",
+    installmentRates: Array.isArray(agency.installmentRates) ? agency.installmentRates : Array(12).fill(0),
+  };
+}
+
 export function visibleState(state: StatePayload, user: AuthUser): StatePayload {
   if (user.role === "admin") return state;
-  return Object.fromEntries(Object.entries(state).filter(([key]) => [...RECORD_KEYS, "settings"].includes(key)).map(([key, value]) =>
-    RECORD_KEYS.includes(key as RecordKey)
-      ? [key, Array.isArray(value) ? value.filter((record) => canAccessRecord(record, user)) : []]
-      : [key, value],
-  )) as StatePayload;
+  return {
+    quotes: state.quotes.filter((record) => canAccessRecord(record, user)),
+    clients: state.clients.filter((record) => canAccessRecord(record, user)),
+    suppliers: state.suppliers.filter((record) => canAccessRecord(record, user)),
+    events: state.events.filter((record) => canAccessRecord(record, user)),
+    settings: settingsForUser(state, user),
+  };
 }
 
 export function mergeState(current: StatePayload, incoming: StatePayload, user: AuthUser): StatePayload {
@@ -50,5 +70,18 @@ export function mergeState(current: StatePayload, incoming: StatePayload, user: 
     }
   }
   if (user.role === "admin") result.settings = incoming.settings ?? current.settings;
+  else {
+    const settings = incoming.settings as Record<string, unknown> | undefined;
+    if (!settings || typeof settings !== "object" || Array.isArray(settings)) throw new Error("Configurações inválidas.");
+    const fields = ["contactName", "contactEmail", "contactPhone", "companyName", "document", "instagram", "address", "logoDataUrl"] as const;
+    const own = Object.fromEntries(fields.map((field) => [field, typeof settings[field] === "string" ? settings[field] : ""]));
+    if (fields.some((field) => (own[field] as string).length > (field === "logoDataUrl" ? 2_000_000 : 500))) throw new Error("Configurações inválidas.");
+    const rates = settings.installmentRates;
+    if (!Array.isArray(rates) || rates.length > 24 || rates.some((rate) => typeof rate !== "number" || !Number.isFinite(rate) || rate < 0 || rate > 100)) throw new Error("Taxas inválidas.");
+    result.userSettings = {
+      ...((current.userSettings && typeof current.userSettings === "object" && !Array.isArray(current.userSettings)) ? current.userSettings as Record<string, unknown> : {}),
+      [user.id]: { ...own, currency: ["BRL", "USD", "EUR"].includes(String(settings.currency)) ? settings.currency : "BRL", installmentRates: rates },
+    };
+  }
   return result;
 }

@@ -21,11 +21,14 @@ test("gravação do usuário mantém registros alheios e configurações", () =>
   const submitted = visibleState(state(), user);
   submitted.quotes[0].name = "Atualizado";
   submitted.quotes.push({ id: "new" });
-  submitted.settings = { companyName: "Falso" };
+  submitted.settings = { ...(submitted.settings as object), companyName: "Empresa do usuário" };
   const result = mergeState(state(), submitted, user);
   expect(result.quotes.find((item) => item.id === "legacy")?.ownerId).toBeUndefined();
   expect(result.quotes.find((item) => item.id === "new")?.ownerId).toBe(user.id);
   expect(result.settings).toEqual({ companyName: "RM" });
+  expect((result.userSettings as Record<string, { companyName: string }>)[user.id].companyName).toBe("Empresa do usuário");
+  expect((visibleState(result, user).settings as { companyName: string }).companyName).toBe("Empresa do usuário");
+  expect(visibleState(result, { ...user, id: "user-2" }).userSettings).toBeUndefined();
 });
 
 test("usuário não altera registros alheios nem atribuições", () => {
