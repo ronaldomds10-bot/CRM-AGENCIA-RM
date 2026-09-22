@@ -1,0 +1,12 @@
+{
+  "url": "https://rm-travel-hub.vercel.app/?share=339bfc53-0a14-4086-a80e-b9865f512ddc",
+  "started_at": "2026-09-16T05:39:15.130Z",
+  "checks": {
+    "fetch_reachable": true,
+    "html_non_empty": true,
+    "screenshots": "skipped-no-browser-driver"
+  },
+  "errors": [],
+  "status": 200,
+  "html_length": 8046
+}

@@ -4,6 +4,11 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "RM Partiu Viagens CRM",
   description: "Central operacional para vendas, financeiro e acompanhamento da RM Partiu Viagens.",
+  icons: {
+    icon: [{ url: "/rm-favicon.png", type: "image/png", sizes: "64x64" }],
+    shortcut: "/rm-favicon.png",
+    apple: "/rm-favicon.png",
+  },
 };
 
 export default function RootLayout({
