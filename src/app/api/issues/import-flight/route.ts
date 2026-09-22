@@ -55,7 +55,7 @@ const flightSchema = {
 };
 
 export async function POST(request: NextRequest) {
-  if (!isAuthorized(request)) return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
+  if (!await isAuthorized(request)) return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
   const apiKey = process.env.THUNDERBIT_API_KEY;
   if (!apiKey) return NextResponse.json({ error: "A integração Thunderbit ainda não foi configurada." }, { status: 503 });
 

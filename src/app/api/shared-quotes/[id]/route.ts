@@ -26,7 +26,8 @@ export async function GET(
     const payload = currentQuote
       ? { quote: currentQuote, settings: currentData.settings ?? result.rows[0].payload.settings }
       : result.rows[0].payload;
-    return NextResponse.json(payload, { headers: { "Cache-Control": "no-store, max-age=0" } });
+    const { ownerId: _ownerId, assignedUserId: _assignedUserId, ...publicQuote } = payload.quote;
+    return NextResponse.json({ ...payload, quote: publicQuote }, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (error) {
     console.error("Falha ao abrir orçamento compartilhado:", error);
     return NextResponse.json({ error: "Não foi possível abrir o orçamento." }, { status: 503 });

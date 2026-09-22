@@ -17,7 +17,10 @@ type ViewKey =
   | "suppliers"
   | "tutorials"
   | "billing"
-  | "settings";
+  | "settings"
+  | "users";
+type CurrentUser = { id: string; email: string; name: string; role: "admin" | "user" };
+type ManagedUser = CurrentUser & { active: boolean; created_at: string };
 type QuoteTab = "trip" | "flights" | "cars" | "hotels" | "insurance" | "tours" | "import";
 type Status = "cotacao" | "aguardando" | "emitido" | "cancelado";
 type Airport = { i: string; c: string; n: string; p: string };
@@ -203,6 +206,8 @@ type IssueDetails = {
 };
 type Quote = {
   id: string;
+  ownerId?: string;
+  assignedUserId?: string | null;
   createdAt: string;
   isIssue?: boolean;
   isDemo?: boolean;
@@ -240,6 +245,8 @@ type Quote = {
 };
 type Client = {
   id: string;
+  ownerId?: string;
+  assignedUserId?: string | null;
   name: string;
   phone: string;
   email: string;
@@ -257,6 +264,8 @@ type Client = {
 };
 type Supplier = {
   id: string;
+  ownerId?: string;
+  assignedUserId?: string | null;
   name: string;
   type: string;
   contact: string;
@@ -268,6 +277,8 @@ type Supplier = {
 };
 type CalendarEvent = {
   id: string;
+  ownerId?: string;
+  assignedUserId?: string | null;
   title: string;
   date: string;
   description: string;
@@ -546,6 +557,17 @@ function syncPassengerBaggage(flight: Flight): Flight {
     backpacks: flight.passengers.reduce((sum, passenger) => sum + passenger.backpacks, 0),
   };
 }
+function inheritFlightBaggage(flight: Flight, firstFlight: Flight, newPassengerIds = false): Flight {
+  return syncPassengerBaggage({
+    ...flight,
+    adults: firstFlight.adults,
+    children: firstFlight.children,
+    bags: firstFlight.bags,
+    passengers: firstFlight.passengers.map((passenger) => ({ ...passenger, id: newPassengerIds ? uid() : passenger.id })),
+    checkedBagWeight: firstFlight.checkedBagWeight,
+    carryOnWeight: firstFlight.carryOnWeight,
+  });
+}
 function defaultQuote(): Quote {
   return {
     id: uid(),
@@ -822,7 +844,7 @@ function normalizeQuote(value: Partial<Quote>): Quote {
     tours: value.tours ?? [],
   };
 }
-function normalizeData(parsed: Partial<CRMData>): CRMData {
+function normalizeData(parsed: Partial<CRMData>, includeSeedRecords = true): CRMData {
     const storedSuppliers = (Array.isArray(parsed.suppliers)
       ? parsed.suppliers
       : defaultData().suppliers
@@ -835,7 +857,7 @@ function normalizeData(parsed: Partial<CRMData>): CRMData {
       storedSuppliers.map((supplier) => supplier.name.trim().toLocaleLowerCase("pt-BR")),
     );
     const suppliers = [
-      ...requestedSuppliers.filter(
+      ...(includeSeedRecords ? requestedSuppliers : []).filter(
         (supplier) => !supplierNames.has(supplier.name.toLocaleLowerCase("pt-BR")),
       ),
       ...storedSuppliers,
@@ -844,9 +866,9 @@ function normalizeData(parsed: Partial<CRMData>): CRMData {
       quotes: Array.isArray(parsed.quotes)
         ? parsed.quotes.map(normalizeQuote)
         : defaultData().quotes,
-      clients: mergeImportedClients(
-        Array.isArray(parsed.clients) ? parsed.clients : defaultData().clients,
-      ),
+      clients: includeSeedRecords
+        ? mergeImportedClients(Array.isArray(parsed.clients) ? parsed.clients : defaultData().clients)
+        : (Array.isArray(parsed.clients) ? parsed.clients : []),
       suppliers,
       events: Array.isArray(parsed.events) ? parsed.events : defaultData().events,
       settings: { ...defaultData().settings, ...parsed.settings },
@@ -866,9 +888,6 @@ function readData(): CRMData {
   } catch {
     return defaultData();
   }
-}
-function saveData(data: CRMData) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
 }
 function shareUrl(payload: SharedQuote) {
   const bytes = new TextEncoder().encode(JSON.stringify(payload));
@@ -1130,6 +1149,7 @@ async function openQuotePdf(quote: Quote, settings: AppSettings, downloadName?: 
   };
   const airportCode = (value: string) => value.split("-")[0]?.trim().toUpperCase() || "---";
   const airportName = (value: string) => value.split("-").slice(1).join("-").trim() || value || "A confirmar";
+  const airportCity = (value: string) => airportName(value).split(/[\/,]/)[0].trim();
   const duration = (flight: Flight, timeZones: Record<string, string> | null) => {
     const fromZone = timeZones?.[airportCode(flight.from)] || "";
     const toZone = timeZones?.[airportCode(flight.to)] || "";
@@ -1141,12 +1161,12 @@ async function openQuotePdf(quote: Quote, settings: AppSettings, downloadName?: 
       arrivalTime: flight.arriveTime,
       arrivalTimeZone: toZone,
     }) : null;
-    if (actualMinutes !== null) return `${Math.floor(actualMinutes / 60)}h ${String(actualMinutes % 60).padStart(2, "0")}min de voo`;
+    if (actualMinutes !== null) return `${Math.floor(actualMinutes / 60)}h ${actualMinutes % 60}min de voo`;
     if (!/^\d{2}:\d{2}$/.test(flight.departTime) || !/^\d{2}:\d{2}$/.test(flight.arriveTime)) return "A confirmar";
     const [sh, sm] = flight.departTime.split(":").map(Number); const [eh, em] = flight.arriveTime.split(":").map(Number);
     if ([sh, sm, eh, em].some(Number.isNaN)) return "A confirmar";
     let minutes = eh * 60 + em - (sh * 60 + sm); if (minutes < 0) minutes += 1440;
-    return `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, "0")}min de voo`;
+    return `${Math.floor(minutes / 60)}h ${minutes % 60}min de voo`;
   };
   const page = () => { pdf.setFillColor(255, 255, 255); pdf.rect(0, 0, 210, 297, "F"); };
   const svgMarkupToPng = async (svg: string, width = 480, height = 160) => {
@@ -1224,44 +1244,45 @@ async function openQuotePdf(quote: Quote, settings: AppSettings, downloadName?: 
   text("Voos", margin + 11, y, 10, ink, "bold"); y += 6;
   const ensureSpace = (height: number) => { if (y + height <= 289) return; pdf.addPage(); page(); y = 12; };
   const renderFlight = (flight: Flight, title: string) => {
-    ensureSpace(83);
+    ensureSpace(78);
     const isOutbound = title.startsWith("Ida");
-    card(margin, y, contentWidth, 78, 4);
+    card(margin, y, contentWidth, 75, 4);
     const airline = flight.airline || "Companhia aérea";
     const logo = airlineLogos.get(flight.airline);
     if (!logo || !addContainedPdfImage(pdf, logo, 21, y + 8, 28, 13)) center(airline.toUpperCase(), 35, y + 17, 10, [4, 30, 66], "bold", 34);
-    if (takeoffPng) pdf.addImage(takeoffPng, "PNG", 70, y + 7, 5.5, 5.5, undefined, "FAST");
-    text("Saindo de", 78, y + 10, 4.7, muted); text(`${airportName(flight.from)} (${airportCode(flight.from)})`, 78, y + 15, 6.3, ink, "bold", { maxWidth: 39 });
-    if (takeoffPng) pdf.addImage(takeoffPng, "PNG", 112, y + 7, 5.5, 5.5, undefined, "FAST");
-    text("Com destino", 120, y + 10, 4.7, muted); text(`${airportName(flight.to)} (${airportCode(flight.to)})`, 120, y + 15, 6.3, ink, "bold", { maxWidth: 39 });
-    text("Classe", 174, y + 10, 4.7, muted); text(flight.cabinClass || "Econômica", 174, y + 16, 7.5, muted, "bold", { maxWidth: 22 });
-    if (usersPng) pdf.addImage(usersPng, "PNG", 174, y + 19.5, 5, 5, undefined, "FAST");
-    text(String(flight.passengers.length), 181, y + 24, 7.5, muted, "bold");
-    center(`em ${fullDate(flight.date || (isOutbound ? quote.startDate : quote.endDate))}`, 112, y + 23, 5.8, muted);
-    pdf.setDrawColor(225, 228, 234); pdf.line(15, y + 28, 195, y + 28);
-    center(flight.departTime || "--:--", 49, y + 37, 10, ink, "bold"); center(`${airportCode(flight.from)} em ${airportName(flight.from)}`, 49, y + 42, 5.8, muted, "normal", 50);
-    center("Duração", 105, y + 38, 4.8, muted); center(duration(flight, timeZones), 105, y + 44, 5.8, ink, "bold", 39);
-    center(flight.arriveTime || "--:--", 163, y + 37, 10, ink, "bold"); center(`${airportCode(flight.to)} em ${airportName(flight.to)}`, 163, y + 42, 5.8, muted, "normal", 50);
-    pdf.line(15, y + 49, 195, y + 49);
-    text("O que está incluso?", 15, y + 60, 6.5, ink, "bold");
-    suitcaseIcon(63, y + 57, 1.15); text(String(flight.checkedBags), 86, y + 62, 16, ink, "bold", { align: "right" }); text(`bagagem\ndespachada (${flight.checkedBagWeight || 0}kg)`, 89, y + 57, 5, ink);
-    text(String(flight.carryOnBags), 134, y + 62, 16, ink, "bold", { align: "right" }); text(`bagagem\nde bordo (${flight.carryOnWeight || 0}kg)`, 137, y + 57, 5, ink);
-    text(String(flight.backpacks), 177, y + 62, 16, ink, "bold", { align: "right" }); text("mochila\nou bolsa", 180, y + 57, 5, ink);
-    text(`Esta reserva ${flight.refundable ? "é" : "não é"} reembolsável`, 15, y + 72, 5.8, muted);
-    y += 85;
+    if (takeoffPng) pdf.addImage(takeoffPng, "PNG", 70, y + 6, 5.5, 5.5, undefined, "FAST");
+    text("Saindo de", 78, y + 8.5, 4.7, muted); text(`${airportCity(flight.from)} (${airportCode(flight.from)})`, 78, y + 12.5, 6.3, ink, "bold", { maxWidth: 39 });
+    if (takeoffPng) pdf.addImage(takeoffPng, "PNG", 112, y + 6, 5.5, 5.5, undefined, "FAST");
+    text("Com destino", 120, y + 8.5, 4.7, muted); text(`${airportCity(flight.to)} (${airportCode(flight.to)})`, 120, y + 12.5, 6.3, ink, "bold", { maxWidth: 39 });
+    center("Classe", 174, y + 8.5, 4.7, muted); center(flight.cabinClass || "Econômica", 174, y + 14, 7.5, muted, "bold", 25);
+    if (usersPng) pdf.addImage(usersPng, "PNG", 174, y + 16.5, 5, 5, undefined, "FAST");
+    text(String(flight.passengers.length), 181, y + 21, 7.5, muted, "bold");
+    center(`em ${fullDate(flight.date || (isOutbound ? quote.startDate : quote.endDate))}`, 112, y + 18, 5.8, muted);
+    pdf.setDrawColor(225, 228, 234); pdf.line(15, y + 26, 195, y + 26);
+    center(flight.departTime || "--:--", 49, y + 33, 10, ink, "bold"); center(`${airportCode(flight.from)} em ${airportName(flight.from)}`, 49, y + 37.5, 5.8, muted, "normal", 50);
+    center("Duração", 105, y + 33, 4.8, muted); center(duration(flight, timeZones), 105, y + 37.5, 5.8, ink, "bold", 39);
+    center(flight.arriveTime || "--:--", 163, y + 33, 10, ink, "bold"); center(`${airportCode(flight.to)} em ${airportName(flight.to)}`, 163, y + 37.5, 5.8, muted, "normal", 50);
+    pdf.line(15, y + 43, 195, y + 43);
+    text("O que está incluso?", 15, y + 51.5, 6.5, ink, "bold");
+    suitcaseIcon(63, y + 49.5, 1.15); text(String(flight.checkedBags), 91, y + 55, 16, ink, "bold", { align: "right" }); text(`bagagem\ndespachada (${flight.checkedBagWeight || 0}kg)`, 94, y + 50, 5, ink);
+    text(String(flight.carryOnBags), 139, y + 55, 16, ink, "bold", { align: "right" }); text(`bagagem\nde bordo (${flight.carryOnWeight || 0}kg)`, 142, y + 50, 5, ink);
+    text(String(flight.backpacks), 182, y + 55, 16, ink, "bold", { align: "right" }); text("mochila\nou bolsa", 185, y + 50, 5, ink);
+    text(`Esta reserva ${flight.refundable ? "é" : "não é"} reembolsável`, 15, y + 66, 5.8, muted);
+    y += 78;
   };
   const hasFlight = (flight: Flight) => Boolean(flight.code || flight.from || flight.to || flight.date);
   const outboundFlights = [quote.flightOut, ...(quote.flightOutSegments ?? [])];
   const returnFlights = [quote.flightBack, ...(quote.flightBackSegments ?? [])];
   const renderFlightSequence = (flights: Flight[], direction: "Ida" | "Volta") => {
     const visible = flights.filter(hasFlight);
+    const firstFlight = flights[0];
     visible.forEach((flight, index) => {
       if (index) {
         ensureSpace(12);
         center(layoverLabel(visible[index - 1], flight), 105, y + 2, 5.8, muted, "bold");
         y += 9;
       }
-      renderFlight(syncPassengerBaggage(flight), index ? `${direction} · trecho ${index + 1}` : direction);
+      renderFlight(flight === firstFlight ? syncPassengerBaggage(flight) : inheritFlightBaggage(flight, firstFlight), index ? `${direction} · trecho ${index + 1}` : direction);
     });
   };
   renderFlightSequence(outboundFlights, "Ida");
@@ -1879,7 +1900,10 @@ export function RMApp() {
   const [authVersion, setAuthVersion] = useState(0);
   const [remoteEnabled, setRemoteEnabled] = useState(false);
   const [remoteError, setRemoteError] = useState("");
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const syncedData = useRef("");
+  const stateVersion = useRef("");
 
   useEffect(() => {
     const shared = readSharedQuote();
@@ -1908,8 +1932,6 @@ export function RMApp() {
         window.removeEventListener("focus", loadSharedQuote);
       };
     }
-    const localData = readData();
-    setData(localData);
     let active = true;
     void (async () => {
       try {
@@ -1921,16 +1943,30 @@ export function RMApp() {
           return;
         }
         if (!response.ok) throw new Error("Banco de dados indisponível.");
-        const payload = await response.json() as { data: Partial<CRMData> | null };
-        if (payload.data) setData(normalizeData(payload.data));
+        const payload = await response.json() as { data: Partial<CRMData> | null; user: CurrentUser; updatedAt?: string };
+        stateVersion.current = payload.updatedAt || "";
+        if (payload.data) {
+          const normalized = normalizeData(payload.data, payload.user.role === "admin");
+          syncedData.current = JSON.stringify(normalized);
+          setData(normalized);
+        }
         else {
+          const localData = readData();
           const initialSave = await fetch("/api/crm-state", {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(localData),
           });
           if (!initialSave.ok) throw new Error("Não foi possível importar os dados locais.");
+          const saved = await initialSave.json() as { updatedAt?: string };
+          stateVersion.current = saved.updatedAt || "";
+          const normalized = normalizeData(localData);
+          syncedData.current = JSON.stringify(normalized);
+          setData(normalized);
         }
+        localStorage.removeItem(STORAGE_KEY);
+        localStorage.removeItem(LEGACY_STORAGE_KEY);
+        setCurrentUser(payload.user);
         setAuthRequired(false);
         setRemoteEnabled(true);
         setRemoteError("");
@@ -1944,21 +1980,27 @@ export function RMApp() {
   }, [authVersion]);
   useEffect(() => {
     if (!ready) return;
-    saveData(data);
     if (!remoteEnabled) return;
+    const serialized = JSON.stringify(data);
+    if (serialized === syncedData.current) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
       void fetch("/api/crm-state", {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      }).then((response) => {
+        headers: { "Content-Type": "application/json", ...(currentUser?.role === "admin" && stateVersion.current ? { "If-Match": stateVersion.current } : {}) },
+        body: serialized,
+      }).then(async (response) => {
+        if (response.status === 401) { setAuthRequired(true); throw new Error("Sessão encerrada."); }
+        if (response.status === 409) throw new Error("Dados alterados por outra pessoa. Recarregue a página antes de salvar novamente.");
         if (!response.ok) throw new Error("Falha ao salvar no banco.");
+        const result = await response.json() as { updatedAt?: string };
+        stateVersion.current = result.updatedAt || stateVersion.current;
+        syncedData.current = serialized;
         setRemoteError("");
-      }).catch(() => setRemoteError("Alterações salvas apenas neste dispositivo. Tentaremos sincronizar novamente."));
+      }).catch((cause) => setRemoteError(cause instanceof Error ? cause.message : "Falha ao salvar no banco."));
     }, 700);
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
-  }, [data, ready, remoteEnabled]);
+  }, [data, ready, remoteEnabled, currentUser?.role]);
 
   const totals = useMemo(() => {
     const issued = data.quotes.filter(
@@ -2050,6 +2092,11 @@ export function RMApp() {
       if (!response.ok) throw new Error();
       if (saveTimer.current) clearTimeout(saveTimer.current);
       setRemoteEnabled(false);
+      syncedData.current = "";
+      stateVersion.current = "";
+      setCurrentUser(null);
+      setData({ quotes: [], clients: [], suppliers: [], events: [], settings: defaultData().settings });
+      setView("dashboard");
       setMenuOpen(false);
       setAuthRequired(true);
     } catch {
@@ -2063,6 +2110,7 @@ export function RMApp() {
     return <div className="min-h-screen bg-[#000918]" aria-busy="true" aria-label="Carregando aplicação" />;
   if (authRequired) return <LoginState onSuccess={() => setAuthVersion((value) => value + 1)} />;
   if (sharedQuote) return <SharedQuotePage {...sharedQuote} />;
+  if (!currentUser) return <div className="grid min-h-screen place-items-center bg-[#000918] p-6 text-white"><div>{remoteError || "Carregando acesso..."}<button className="dark-mini ml-4" onClick={() => setAuthVersion((value) => value + 1)}>Tentar novamente</button></div></div>;
   return (
     <div
       className={`${lightTheme ? "theme-light" : ""} min-h-screen bg-[#000918] text-white lg:grid lg:grid-cols-[200px_1fr]`}
@@ -2070,12 +2118,13 @@ export function RMApp() {
     >
       <aside className="hidden border-r border-[#1c3148] bg-[#0b1726] lg:flex lg:flex-col">
         <Brand />
-        <Nav current={view} onChange={setView} />
+        <Nav current={view} onChange={setView} role={currentUser.role} />
         <div className="mt-auto grid gap-1 p-3">
-          <button className="nav-secondary" onClick={() => setView("billing")}>Minha assinatura</button>
-          <button className="nav-secondary" onClick={() => setView("settings")}>
+          {currentUser.role === "admin" ? <button className="nav-secondary" onClick={() => setView("users")}>Usuários</button> : null}
+          {currentUser.role === "admin" ? <button className="nav-secondary" onClick={() => setView("billing")}>Minha assinatura</button> : null}
+          {currentUser.role === "admin" ? <button className="nav-secondary" onClick={() => setView("settings")}>
             Configurações
-          </button>
+          </button> : null}
           <button className="nav-secondary logout-button" onClick={logout} disabled={loggingOut}>
             <LogoutIcon />
             <span>{loggingOut ? "Saindo..." : "Sair do sistema"}</span>
@@ -2098,9 +2147,9 @@ export function RMApp() {
               <button className="icon-button" title="Novo orçamento" onClick={createQuote}>
                 ✣
               </button>
-              <button className="icon-button" title="Perfil" onClick={() => setView("settings")}>
+              {currentUser.role === "admin" ? <button className="icon-button" title="Perfil" onClick={() => setView("settings")}>
                 ◎
-              </button>
+              </button> : null}
               <button className="icon-button" title="Tema" onClick={() => setLightTheme((value) => !value)}>
                 ☼
               </button>
@@ -2110,18 +2159,20 @@ export function RMApp() {
             <div className="mt-3 rounded-md border border-[#1c3148] bg-[#0b1726] p-2 lg:hidden">
               <Nav
                 current={view}
+                role={currentUser.role}
                 onChange={(next) => {
                   setView(next);
                   setMenuOpen(false);
                 }}
               />
               <div className="mobile-menu-footer">
-                <button className="nav-secondary" onClick={() => { setView("billing"); setMenuOpen(false); }}>
+                {currentUser.role === "admin" ? <button className="nav-secondary" onClick={() => { setView("users"); setMenuOpen(false); }}>Usuários</button> : null}
+                {currentUser.role === "admin" ? <button className="nav-secondary" onClick={() => { setView("billing"); setMenuOpen(false); }}>
                   Minha assinatura
-                </button>
-                <button className="nav-secondary" onClick={() => { setView("settings"); setMenuOpen(false); }}>
+                </button> : null}
+                {currentUser.role === "admin" ? <button className="nav-secondary" onClick={() => { setView("settings"); setMenuOpen(false); }}>
                   Configurações
-                </button>
+                </button> : null}
                 <button className="nav-secondary logout-button" onClick={logout} disabled={loggingOut}>
                   <LogoutIcon />
                   <span>{loggingOut ? "Saindo..." : "Sair do sistema"}</span>
@@ -2202,7 +2253,7 @@ export function RMApp() {
               }}
             />
           ) : null}
-          {view === "finance" ? (
+          {view === "finance" && currentUser.role === "admin" ? (
             <Finance totals={totals} quotes={data.quotes} />
           ) : null}
           {view === "calendar" ? (
@@ -2222,8 +2273,19 @@ export function RMApp() {
             />
           ) : null}
           {view === "tutorials" ? <Tutorials /> : null}
-          {view === "billing" ? <Billing /> : null}
-          {view === "settings" ? (
+          {view === "billing" && currentUser.role === "admin" ? <Billing /> : null}
+          {view === "users" && currentUser.role === "admin" ? <UsersAdmin currentUser={currentUser} onAssignment={async () => {
+            if (saveTimer.current) clearTimeout(saveTimer.current);
+            const response = await fetch("/api/crm-state", { cache: "no-store" });
+            if (response.ok) {
+              const payload = await response.json() as { data: CRMData; updatedAt?: string };
+              const normalized = normalizeData(payload.data);
+              syncedData.current = JSON.stringify(normalized);
+              stateVersion.current = payload.updatedAt || "";
+              setData(normalized);
+            }
+          }} /> : null}
+          {view === "settings" && currentUser.role === "admin" ? (
             <Settings
               settings={data.settings}
               onSave={(settings) => {
@@ -2485,13 +2547,15 @@ function SharedFlightSequence({ flights, direction, airports, timeZones }: { fli
 function Nav({
   current,
   onChange,
+  role,
 }: {
   current: ViewKey;
   onChange: (view: ViewKey) => void;
+  role: "admin" | "user";
 }) {
   return (
     <nav className="grid gap-1 p-3">
-      {nav.map((item) => (
+      {nav.filter((item) => role === "admin" || item.key !== "finance").map((item) => (
         <button
           key={item.key}
           className={`nav-item ${current === item.key ? "nav-active" : ""}`}
@@ -3106,7 +3170,7 @@ function FlightsForm({
         <div>
           <button className="dark-mini" type="button" onClick={() => {
             if (!showReturn) setShowReturn(true);
-            else onChange({ ...quote, flightBackSegments: [...(quote.flightBackSegments ?? []), { ...emptyFlight(), segmentId: uid() }] });
+            else onChange({ ...quote, flightBackSegments: [...(quote.flightBackSegments ?? []), inheritFlightBaggage({ ...emptyFlight(), segmentId: uid() }, quote.flightBack, true)] });
           }}><PlusIcon /> Nova viagem</button>
           <button className="dark-mini" type="button" onClick={onImport}><DownloadIcon /> Importar</button>
         </div>
@@ -3168,7 +3232,7 @@ function CompactFlightBlock({ title, flight, onChange, segments, onSegmentsChang
           {showSummary ? <FlightSummaryCard flight={flight} onChange={onChange} onRemove={() => onChange({ ...emptyFlight(), passengers: flight.passengers })} /> : null}
           {segments.length || detailsOpen ? <div className="flight-segments">
             {segments.map((segment, index) => <div className="flight-connected-segment" key={segment.segmentId ?? index}><div className="flight-route-connector"><span aria-hidden="true">↔</span><strong>{layoverLabel(index ? segments[index - 1] : flight, segment)}</strong></div><FlightSegmentCard segment={segment} index={index + 2} onChange={(next) => onSegmentsChange(segments.map((item, itemIndex) => itemIndex === index ? next : item))} onRemove={() => onSegmentsChange(segments.filter((_, itemIndex) => itemIndex !== index))} /></div>)}
-            <button className="light-mini add-flight-segment" type="button" onClick={() => onSegmentsChange([...segments, { ...emptyFlight(), segmentId: uid() }])}>＋ Adicionar trecho</button>
+            <button className="light-mini add-flight-segment" type="button" onClick={() => onSegmentsChange([...segments, inheritFlightBaggage({ ...emptyFlight(), segmentId: uid() }, flight, true)])}>＋ Adicionar trecho</button>
           </div> : null}
         </div>
         <div className="compact-passenger-panel">
@@ -6792,6 +6856,73 @@ function SaveButton({
     </button>
   );
 }
+type Assignment = { key: "quotes" | "clients" | "suppliers" | "events"; id: string; label: string; ownerId: string; assignedUserId: string };
+function UsersAdmin({ currentUser, onAssignment }: { currentUser: CurrentUser; onAssignment: () => Promise<void> }) {
+  const [users, setUsers] = useState<ManagedUser[]>([]);
+  const [records, setRecords] = useState<Assignment[]>([]);
+  const [form, setForm] = useState({ name: "", email: "", password: "", role: "user" });
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const load = async () => {
+    const [usersResponse, recordsResponse] = await Promise.all([fetch("/api/admin/users", { cache: "no-store" }), fetch("/api/admin/assignments", { cache: "no-store" })]);
+    if (!usersResponse.ok || !recordsResponse.ok) throw new Error("Não foi possível carregar usuários e atribuições.");
+    setUsers((await usersResponse.json() as { users: ManagedUser[] }).users);
+    setRecords((await recordsResponse.json() as { records: Assignment[] }).records);
+  };
+  useEffect(() => { void load().catch((cause) => setError(cause instanceof Error ? cause.message : "Falha ao carregar.")); }, []);
+  const create = async (event: React.FormEvent) => {
+    event.preventDefault(); setBusy(true); setError("");
+    try {
+      const response = await fetch("/api/admin/users", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
+      const body = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(body.error || "Não foi possível criar usuário.");
+      setForm({ name: "", email: "", password: "", role: "user" });
+      await load();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Falha ao criar usuário."); }
+    finally { setBusy(false); }
+  };
+  const edit = async (user: ManagedUser) => {
+    const name = prompt("Nome", user.name);
+    if (name === null) return;
+    const email = prompt("E-mail", user.email);
+    if (email === null) return;
+    const password = prompt("Nova senha (deixe vazio para manter)", "");
+    if (password === null) return;
+    const role = user.id === "admin" ? "admin" : (prompt("Perfil: admin ou user", user.role) || user.role);
+    const body = { name, email, role, ...(password ? { password } : {}) };
+    const response = await fetch(`/api/admin/users/${encodeURIComponent(user.id)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const result = await response.json() as { error?: string };
+    if (!response.ok) { setError(result.error || "Não foi possível editar usuário."); return; }
+    setError(""); await load();
+  };
+  const toggle = async (user: ManagedUser) => {
+    const response = await fetch(`/api/admin/users/${encodeURIComponent(user.id)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ active: !user.active }) });
+    const result = await response.json() as { error?: string };
+    if (!response.ok) { setError(result.error || "Não foi possível alterar usuário."); return; }
+    setError(""); await load();
+  };
+  const assign = async (record: Assignment, assignedUserId: string) => {
+    const response = await fetch("/api/admin/assignments", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: record.key, id: record.id, assignedUserId }) });
+    const result = await response.json() as { error?: string };
+    if (!response.ok) { setError(result.error || "Não foi possível atribuir registro."); return; }
+    setRecords((items) => items.map((item) => item.key === record.key && item.id === record.id ? { ...item, assignedUserId } : item));
+    await onAssignment();
+  };
+  return <div className="grid gap-5">
+    <div><h1 className="text-2xl font-bold">Usuários</h1><p className="text-sm text-[#9fc8ee]">Gerencie o acesso e atribua registros operacionais.</p></div>
+    {error ? <p className="rounded border border-red-500 p-3 text-red-300" role="alert">{error}</p> : null}
+    <form className="grid gap-3 rounded-lg border border-[#1c3148] p-4 md:grid-cols-5" onSubmit={create}>
+      <input className="input" aria-label="Nome" placeholder="Nome" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required />
+      <input className="input" aria-label="E-mail" placeholder="E-mail" type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} required />
+      <input className="input" aria-label="Senha" placeholder="Senha (mín. 12 caracteres)" type="password" minLength={12} value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} required />
+      <select className="input" aria-label="Perfil" value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value })}><option value="user">Usuário</option><option value="admin">Administrador</option></select>
+      <button className="gold-button" type="submit" disabled={busy}>Criar usuário</button>
+    </form>
+    <div className="table-wrap"><table><thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Status</th><th>Ações</th></tr></thead><tbody>{users.map((user) => <tr key={user.id}><td>{user.name}</td><td>{user.email}</td><td>{user.role === "admin" ? "Administrador" : "Usuário"}</td><td>{user.active ? "Ativo" : "Inativo"}</td><td><button className="dark-mini" type="button" onClick={() => void edit(user)}>Editar</button>{user.id !== "admin" && user.id !== currentUser.id ? <button className="dark-mini ml-2" type="button" onClick={() => void toggle(user)}>{user.active ? "Desativar" : "Ativar"}</button> : null}</td></tr>)}</tbody></table></div>
+    <section className="grid gap-3"><h2 className="text-xl font-bold">Atribuir registros</h2><div className="table-wrap"><table><thead><tr><th>Tipo</th><th>Registro</th><th>Responsável</th></tr></thead><tbody>{records.map((record) => <tr key={`${record.key}-${record.id}`}><td>{{ quotes: "Orçamento/Emissão", clients: "Cliente", suppliers: "Fornecedor", events: "Evento" }[record.key]}</td><td>{record.label}</td><td><select className="input" aria-label={`Atribuir ${record.label}`} value={record.assignedUserId} onChange={(event) => void assign(record, event.target.value)}><option value="">Sem atribuição</option>{users.filter((user) => user.role === "user" && user.active).map((user) => <option value={user.id} key={user.id}>{user.name}</option>)}</select></td></tr>)}</tbody></table></div></section>
+  </div>;
+}
+
 function LoginState({ onSuccess }: { onSuccess: () => void }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -6821,7 +6952,7 @@ function LoginState({ onSuccess }: { onSuccess: () => void }) {
       <form className="w-full max-w-sm rounded-xl border border-[#1c3148] bg-[#030b16] p-6 shadow-2xl" onSubmit={submit}>
         <p className="text-sm font-bold uppercase tracking-[0.18em] text-[#ffc83d]">RM Partiu Viagens</p>
         <h1 className="mt-2 text-2xl font-bold">Acessar o CRM</h1>
-        <p className="mt-2 text-sm text-[#9fc8ee]">Use suas credenciais administrativas para acessar os dados da agência.</p>
+        <p className="mt-2 text-sm text-[#9fc8ee]">Entre com seu e-mail e senha para acessar os dados da agência.</p>
         <label className="mt-5 block text-sm font-bold" htmlFor="crm-email">Usuário</label>
         <input
           id="crm-email"

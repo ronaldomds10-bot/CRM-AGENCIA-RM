@@ -8,7 +8,7 @@ const noStore = { "Cache-Control": "no-store, max-age=0" };
 const photoPattern = /^places\/[A-Za-z0-9_-]+\/photos\/[A-Za-z0-9_-]+$/;
 
 export async function GET(request: NextRequest) {
-  if (!isAuthorized(request)) return NextResponse.json({ error: "Não autorizado." }, { status: 401, headers: noStore });
+  if (!await isAuthorized(request)) return NextResponse.json({ error: "Não autorizado." }, { status: 401, headers: noStore });
   const name = request.nextUrl.searchParams.get("name") ?? "";
   if (!photoPattern.test(name)) return NextResponse.json({ error: "Foto inválida." }, { status: 400, headers: noStore });
   try {

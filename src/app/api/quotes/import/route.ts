@@ -514,7 +514,7 @@ async function importUrl(rawUrl: string) {
 }
 
 export async function POST(request: NextRequest) {
-  if (!isAuthorized(request)) return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
+  if (!await isAuthorized(request)) return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
   const identity = request.headers.get("x-forwarded-for")?.split(",")[0] || "quote-import";
   if (!allowRequest(`quote-import:${identity}`, 8, 60_000)) return NextResponse.json({ error: "Muitas importações. Aguarde um instante." }, { status: 429 });
   try {

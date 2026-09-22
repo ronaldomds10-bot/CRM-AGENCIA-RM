@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 const headers = { "Cache-Control": "no-store, max-age=0" };
 
 export async function POST(request: NextRequest) {
-  if (!isAuthorized(request)) return NextResponse.json({ error: "Não autorizado." }, { status: 401, headers });
+  if (!await isAuthorized(request)) return NextResponse.json({ error: "Não autorizado." }, { status: 401, headers });
   const identity = request.headers.get("x-vercel-forwarded-for") || request.headers.get("x-forwarded-for")?.split(",")[0] || "local";
   if (!allowRequest(identity.trim())) return NextResponse.json({ error: "Muitas pesquisas. Aguarde um instante." }, { status: 429, headers });
 
