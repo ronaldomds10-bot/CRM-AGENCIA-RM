@@ -3277,8 +3277,6 @@ function FlightCountInput({ kind, label, value, onChange }: { kind: FlightBagKin
   return <label className="flight-count-field" title={label}><FlightBagIcon kind={kind} /><input type="number" min="0" aria-label={label} value={value} onChange={(event) => onChange(Number(event.target.value))} /></label>;
 }
 function FlightSummaryCard({ flight, onChange, label = "Voo", onRemove }: { flight: Flight; onChange: (flight: Flight) => void; label?: string; onRemove?: () => void }) {
-  const airlineCode = registeredAirlineCode(flight.airline, flight.code);
-  const logo = ({ AD: "/airlines/azul.svg", LA: "/airlines/latam.svg" } as Record<string, string>)[airlineCode] || airlineLogoUrl(flight.airline, flight.code);
   const durationLabel = (() => {
     if (!flight.departTime || !flight.arriveTime) return "";
     const [startHour, startMinute] = flight.departTime.split(":").map(Number);
@@ -3292,7 +3290,7 @@ function FlightSummaryCard({ flight, onChange, label = "Voo", onRemove }: { flig
       const code = event.target.value.toUpperCase();
       const airline = registeredAirlines.find((item) => code.startsWith(item.code));
       onChange({ ...flight, code, airline: airline?.name || flight.airline });
-    }} /></span><select className="flight-result-class" aria-label={`Classe do ${label.toLowerCase()}`} value={flight.cabinClass || "Econômica"} onChange={(event) => onChange({ ...flight, cabinClass: event.target.value })}><option>Primeira Classe</option><option>Executiva</option><option>Econômica Premium</option><option>Econômica</option></select><div className="flight-result-brand">{airlineCode === "G3" ? <span className="flight-gol-mark" aria-label="GOL">GOL</span> : logo ? <img src={logo} alt={`Logo ${flight.airline}`} /> : <strong>{flight.airline || "Companhia aérea"}</strong>}{onRemove ? <button type="button" className="flight-card-remove" aria-label={`Remover ${label}`} title="Remover voo" onClick={onRemove}><TrashIcon /></button> : null}</div></div>
+    }} /></span><select className="flight-result-class" aria-label={`Classe do ${label.toLowerCase()}`} value={flight.cabinClass || "Econômica"} onChange={(event) => onChange({ ...flight, cabinClass: event.target.value })}><option>Primeira Classe</option><option>Executiva</option><option>Econômica Premium</option><option>Econômica</option></select><div className="flight-result-brand"><select className="flight-result-airline" aria-label={`Companhia aérea do ${label.toLowerCase()}`} value={flight.airline} onChange={(event) => onChange({ ...flight, airline: event.target.value })}><option value="">Companhia aérea</option>{flight.airline && !flightAirlines.includes(flight.airline) ? <option value={flight.airline}>{flight.airline}</option> : null}{flightAirlines.map((airline) => <option key={airline} value={airline}>{airline}</option>)}</select>{onRemove ? <button type="button" className="flight-card-remove" aria-label={`Remover ${label}`} title="Remover voo" onClick={onRemove}><TrashIcon /></button> : null}</div></div>
     <div className="flight-result-route">
       <div className="flight-result-edit-column"><label>Saindo</label><TimeInput value={flight.departTime} onChange={(departTime) => onChange({ ...flight, departTime })} /><div className="flight-result-airport"><PlaneSparkIcon /><AirportInput value={flight.from} onChange={(from) => onChange({ ...flight, from })} /></div><SingleDatePicker manual label="Data de saída" value={flight.date} onChange={(date) => onChange({ ...flight, date })} /></div>
       <div className="flight-result-edit-column"><label>Chegada {durationLabel ? <em>({durationLabel})</em> : null}</label><TimeInput value={flight.arriveTime} onChange={(arriveTime) => onChange({ ...flight, arriveTime })} /><div className="flight-result-airport"><PlaneSparkIcon /><AirportInput value={flight.to} onChange={(to) => onChange({ ...flight, to })} /></div><SingleDatePicker manual label="Data de chegada" value={flight.arrivalDate || flight.date} onChange={(arrivalDate) => onChange({ ...flight, arrivalDate })} /></div>
@@ -3769,10 +3767,10 @@ function ExternalQuoteImport({ quote, onChange }: { quote: Quote; onChange: (quo
     }
   };
   const attachFlightPrint = async (image: File | null) => {
-    if (!image) return;
+    if (!image) return null;
     if (!image.type.startsWith("image/") || image.size > 2 * 1024 * 1024) {
       setError("Selecione uma imagem de até 2 MB.");
-      return;
+      return null;
     }
     try {
       const dataUrl = await new Promise<string>((resolve, reject) => {
@@ -3783,22 +3781,23 @@ function ExternalQuoteImport({ quote, onChange }: { quote: Quote; onChange: (quo
       });
       if (flightPrintsRef.current.includes(dataUrl)) {
         setError("Este print já está anexado.");
-        return;
+        return null;
       }
       const nextPrints = [...flightPrintsRef.current, dataUrl];
       if (nextPrints.join("").length > 3 * 1024 * 1024) {
         setError("O conjunto de prints deve ter até 3 MB.");
-        return;
+        return null;
       }
       flightPrintsRef.current = nextPrints;
       onChange({ ...quote, flightPrint: undefined, flightPrints: nextPrints });
       setStatus("idle"); setError("");
+      return nextPrints;
     } catch (readError) {
       setError(readError instanceof Error ? readError.message : "Não foi possível anexar a imagem.");
+      return null;
     }
   };
-  const importFlightPrint = async () => {
-    const images = flightPrintsRef.current;
+  const importFlightPrint = async (images = flightPrintsRef.current) => {
     if (!images.length || status === "loading") return;
     setStatus("loading"); setError("");
     let worker: Awaited<ReturnType<typeof import("tesseract.js")["createWorker"]>> | undefined;
@@ -3825,6 +3824,8 @@ function ExternalQuoteImport({ quote, onChange }: { quote: Quote; onChange: (quo
         const inbound = returnIndex < 0 ? [] : parsed.slice(returnIndex);
         onChange({
           ...quote,
+          flightPrint: undefined,
+          flightPrints: images,
           name: quote.name || `Bilhete ${smiles.locator || smiles.flights[0].from.split(" - ")[0]}`,
           client: quote.client || smiles.passengers[0] || "",
           destination: quote.destination || outbound[outbound.length - 1].to.split(" - ").slice(1).join(" - "),
@@ -3850,6 +3851,8 @@ function ExternalQuoteImport({ quote, onChange }: { quote: Quote; onChange: (quo
         segmentId: uid(),
         code: flight.code,
         airline: flight.airline,
+        cabinClass: flight.cabinClass || existing.cabinClass,
+        adults: flight.passengerCount ?? existing.adults,
         from: flight.from,
         to: flight.to,
         departTime: flight.departTime,
@@ -3863,9 +3866,13 @@ function ExternalQuoteImport({ quote, onChange }: { quote: Quote; onChange: (quo
         .map((flight, index) => makeFlight(flight, index === 0 ? quote.flightBack : quote.flightBackSegments?.[index - 1] ?? emptyFlight(), quote.endDate));
       onChange({
         ...quote,
+        flightPrint: undefined,
+        flightPrints: images,
         flightOut: outbound[0],
         flightOutSegments: outbound.slice(1),
         ...(inbound.length ? { flightBack: inbound[0], flightBackSegments: inbound.slice(1) } : {}),
+        startDate: quote.startDate || outbound[0]?.date || "",
+        endDate: quote.endDate || inbound.at(-1)?.date || outbound.at(-1)?.date || "",
         route: quote.route || [outbound[0].from, ...outbound.map((flight) => flight.to)].join(" → "),
         destination: quote.destination || outbound[outbound.length - 1].to,
       });
@@ -3894,15 +3901,28 @@ function ExternalQuoteImport({ quote, onChange }: { quote: Quote; onChange: (quo
       <Panel title="Print de voos">
         <div className="flight-print-import">
           <div className="flight-print-drop" tabIndex={0} role="group" aria-label="Cole o print de voos com Ctrl+V"
-            onPaste={(event) => {
+            onPaste={async (event) => {
               const image = Array.from(event.clipboardData.files).find((item) => item.type.startsWith("image/"));
-              if (image) { event.preventDefault(); void attachFlightPrint(image); }
+              if (image) {
+                event.preventDefault();
+                const images = await attachFlightPrint(image);
+                if (images) await importFlightPrint(images);
+              }
             }}
             onDragOver={(event) => event.preventDefault()}
-            onDrop={(event) => { event.preventDefault(); void attachFlightPrint(Array.from(event.dataTransfer.files).find((item) => item.type.startsWith("image/")) ?? null); }}>
+            onDrop={async (event) => {
+              event.preventDefault();
+              const images = await attachFlightPrint(Array.from(event.dataTransfer.files).find((item) => item.type.startsWith("image/")) ?? null);
+              if (images) await importFlightPrint(images);
+            }}>
             <strong>Cole o print aqui com Ctrl+V</strong>
             <span>ou selecione uma imagem do computador</span>
-            <input className="input" type="file" accept="image/*" aria-label="Selecionar print de voos" onChange={(event) => { void attachFlightPrint(event.target.files?.[0] ?? null); event.currentTarget.value = ""; }} />
+            <input className="input" type="file" accept="image/*" aria-label="Selecionar print de voos" onChange={async (event) => {
+              const image = event.currentTarget.files?.[0] ?? null;
+              event.currentTarget.value = "";
+              const images = await attachFlightPrint(image);
+              if (images) await importFlightPrint(images);
+            }} />
           </div>
           {flightPrints.length ? <div className="flight-print-list">{flightPrints.map((image, index) => (
             <div className="flight-print-item" key={`${index}-${image.length}`}>
@@ -3915,7 +3935,7 @@ function ExternalQuoteImport({ quote, onChange }: { quote: Quote; onChange: (quo
               }}>Remover print {index + 1}</button>
             </div>
           ))}</div> : null}
-          <button className="light-mini" type="button" disabled={!flightPrints.length || status === "loading"} onClick={importFlightPrint}>{status === "loading" ? "Lendo prints..." : `Preencher voos (${flightPrints.length} ${flightPrints.length === 1 ? "print" : "prints"})`}</button>
+          <button className="light-mini" type="button" disabled={!flightPrints.length || status === "loading"} onClick={() => void importFlightPrint()}>{status === "loading" ? "Lendo prints..." : `Preencher voos (${flightPrints.length} ${flightPrints.length === 1 ? "print" : "prints"})`}</button>
           <small>Confira códigos, aeroportos, horários e datas na aba Voos antes de salvar.</small>
         </div>
       </Panel>

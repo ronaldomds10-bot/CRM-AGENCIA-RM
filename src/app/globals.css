@@ -2826,15 +2826,20 @@ textarea:focus-visible {
 .flight-result-code:focus, .flight-result-class:focus { border-color: #ffc83d; box-shadow: 0 0 0 2px rgb(255 200 61 / 16%); }
 .flight-result-brand { gap: 0.7rem; }
 .flight-result-brand > strong { font-size: 0.67rem; }
+.flight-result-airline { max-width: 9.5rem; min-height: 1.55rem; border: 1px solid transparent; border-radius: 0.2rem; background: transparent; padding: 0.15rem 1.25rem 0.15rem 0.35rem; color: #f8fafc; font-size: 0.66rem; font-weight: 650; outline: none; cursor: pointer; }
+.flight-result-airline:hover { border-color: #40536b; }
+.flight-result-airline:focus-visible { border-color: #ffc83d; box-shadow: 0 0 0 2px rgb(255 200 61 / 16%); }
+.flight-result-airline option { background: #0b1120; color: #f8fafc; }
 .flight-result-meta img { width: 3.65rem; height: 1.45rem; padding: 0.1rem; border-radius: 0.25rem; }
 .flight-gol-mark { display: grid; width: 3.65rem; height: 1.45rem; place-items: center; border-radius: 0.25rem; background: #ff7623; color: #fff; font-size: 0.95rem; font-weight: 900; font-style: italic; letter-spacing: -0.08em; }
 .flight-result-meta .flight-card-remove { width: 1.75rem; height: 1.75rem; }
 .flight-result-meta .flight-card-remove svg { width: 12px; height: 12px; }
-.flight-result-route { gap: 1rem; padding: 0.2rem 0.35rem 0.1rem; }
-.flight-result-route > .flight-result-edit-column { display: grid; align-content: start; gap: 0.1rem; min-width: 0; }
+.flight-result-route { gap: 2rem; padding: 0.45rem 0.35rem 0.25rem; }
+.flight-result-route > .flight-result-edit-column { display: grid; align-content: start; gap: 0.35rem; min-width: 0; }
 .flight-result-edit-column > label { margin: 0 !important; color: #a9c3dc; font-size: 0.64rem; font-weight: 500; }
-.flight-result-edit-column .time-input-wrap .input { width: 100%; min-height: 1.4rem; height: 1.4rem; padding: 0 0.2rem; border: 1px solid transparent; font-size: 1.02rem; font-weight: 800; }
-.flight-result-edit-column .time-input-wrap > span { left: 3.3rem; right: auto; color: #a8bdd1; font-size: 0.59rem; font-weight: 500; }
+.flight-result-edit-column .time-input-wrap { display: flex; min-height: 1.5rem; align-items: center; gap: 0.5rem; }
+.flight-result-edit-column .time-input-wrap .input { width: 4.2rem; min-height: 1.5rem; height: 1.5rem; flex: 0 0 4.2rem; padding: 0 0.2rem; border: 1px solid transparent; font-size: 1.02rem; font-weight: 800; }
+.flight-result-edit-column .time-input-wrap > span { position: static; color: #a8bdd1; font-size: 0.59rem; font-weight: 500; transform: none; }
 .flight-result-edit-column .flight-result-airport { display: flex; align-items: center; gap: 0.15rem; min-width: 0; }
 .flight-result-airport > svg { width: 11px; height: 11px; flex: 0 0 auto; color: #a8bdd1; }
 .flight-result-edit-column .flight-result-airport .airport-input-wrap { min-width: 0; flex: 1; }
