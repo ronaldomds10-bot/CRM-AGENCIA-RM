@@ -12,6 +12,7 @@ type ViewKey =
   | "quotes"
   | "issues"
   | "clients"
+  | "opportunities"
   | "finance"
   | "calendar"
   | "suppliers"
@@ -186,6 +187,14 @@ type TourReservation = {
   travelers: number;
   refundable: boolean;
 };
+type IssueAttachment = {
+  id: string;
+  name: string;
+  type: string;
+  size: number;
+  dataUrl: string;
+  createdAt: string;
+};
 type IssueDetails = {
   locator: string;
   locatorLink: string;
@@ -203,6 +212,7 @@ type IssueDetails = {
   paymentMethod: string;
   showLogo: boolean;
   extraNotes: string;
+  attachments: IssueAttachment[];
 };
 type Quote = {
   id: string;
@@ -256,6 +266,9 @@ type Client = {
   origin: string;
   surname?: string;
   address?: string;
+  city?: string;
+  state?: string;
+  ibgeCode?: string;
   hasPassport?: boolean;
   passportIssuedAt?: string;
   passportExpiresAt?: string;
@@ -312,6 +325,7 @@ const nav: Array<{ key: ViewKey; label: string; icon: string }> = [
   { key: "quotes", label: "Orçamentos", icon: "▣" },
   { key: "issues", label: "Emissões", icon: "▤" },
   { key: "clients", label: "Clientes", icon: "◎" },
+  { key: "opportunities", label: "Oportunidades", icon: "✦" },
   { key: "finance", label: "Financeiro", icon: "$" },
   { key: "calendar", label: "Calendário", icon: "□" },
   { key: "suppliers", label: "Fornecedores", icon: "◇" },
@@ -605,6 +619,7 @@ function defaultQuote(): Quote {
       paymentMethod: "PIX",
       showLogo: true,
       extraNotes: "",
+      attachments: [],
     },
     notes: "Opção 1 - PIX R$ 4.800,00\nOpção 2 - Entrada + parcelamento.",
     flightOut: defaultFlight(),
@@ -830,7 +845,11 @@ function normalizeQuote(value: Partial<Quote>): Quote {
     isIssue: value.isIssue ?? Boolean(value.issue?.locator),
     name: isDemo ? "" : (value.name ?? base.name),
     isDemo,
-    issue: { ...base.issue, ...value.issue },
+    issue: {
+      ...base.issue,
+      ...value.issue,
+      attachments: Array.isArray(value.issue?.attachments) ? value.issue.attachments : [],
+    },
     flightOut: normalizeFlight({ ...base.flightOut, ...value.flightOut, ...placeholderFlightFields }),
     flightBack: normalizeFlight({ ...base.flightBack, ...value.flightBack, ...placeholderFlightFields }),
     flightOutSegments: (value.flightOutSegments ?? []).map((flight) => normalizeFlight({ ...emptyFlight(), ...flight, segmentId: flight.segmentId ?? uid() })),
@@ -1390,7 +1409,7 @@ function openIssuePdfLegacy(issue: Quote, settings: AppSettings, downloadName?: 
     pdf.setFillColor(...paleBlue);
     pdf.roundedRect(margin + 4, y + 4, 40, 23, 2, 2, "F");
     text((flight.airline || issue.issue.provider || "AÉREA").toUpperCase(), margin + 24, y + 12, 9, blue, "bold", { align: "center", maxWidth: 35 });
-    text(flight.code || "Voo a confirmar", margin + 24, y + 20, 7, ink, "bold", { align: "center" });
+    if (flight.code) text(flight.code, margin + 24, y + 20, 7, ink, "bold", { align: "center" });
     text(flight.departTime || "--:--", margin + 54, y + 10, 11, ink, "bold");
     text(shortAirport(flight.from), margin + 54, y + 17, 7, ink, "bold");
     text(flight.from || "Origem a confirmar", margin + 54, y + 23, 5.8, muted, "normal", { maxWidth: 42 });
@@ -1797,10 +1816,11 @@ async function openIssuePdf(issue: Quote, settings: AppSettings, downloadName?: 
     pdf.setFillColor(255, 255, 255);
     pdf.setDrawColor(...border);
     pdf.roundedRect(margin, y, pageWidth - margin * 2, 38, 3, 3, "FD");
-    const airline = flight.airline || issue.issue.provider || "Companhia aérea";
+    const airlineName = flight.airline || issue.issue.provider;
+    const airline = airlineName || "Companhia aérea";
     const airlineLogo = logos.get(flight.airline);
-    if (!airlineLogo || !addContainedPdfImage(pdf, airlineLogo, margin + 8, y + 5, 34, 15)) text(airline.toUpperCase(), margin + 25, y + 14, 8.5, blue, "bold", { align: "center", maxWidth: 36 });
-    text(flight.code || "Voo a confirmar", margin + 25, y + 27, 6.4, ink, "bold", { align: "center" });
+    if (!airlineLogo || !addContainedPdfImage(pdf, airlineLogo, margin + 8, y + 5, 34, 15)) text(registeredAirlineCode(airlineName, flight.code) || airline.slice(0, 2).toUpperCase(), margin + 25, y + 14, 8.5, blue, "bold", { align: "center", maxWidth: 36 });
+    if (airlineName) text(airlineName.toUpperCase(), margin + 25, y + 27, 6.4, ink, "bold", { align: "center", maxWidth: 36 });
     text("Classe", margin + 54, y + 12, 4.8, muted);
     text("Econômica", margin + 54, y + 19, 6.3, ink, "bold");
     text(flight.departTime || "--:--", margin + 85, y + 9, 9.5, ink, "bold");
@@ -2197,6 +2217,7 @@ export function RMApp() {
               quotes={data.quotes}
               events={data.events}
               onCreate={createQuote}
+              onOpenOpportunities={() => setView("opportunities")}
             />
           ) : null}
           {view === "quotes" ? (
@@ -2253,6 +2274,7 @@ export function RMApp() {
               }}
             />
           ) : null}
+          {view === "opportunities" ? <HolidayOpportunities role={currentUser.role} /> : null}
           {view === "finance" && currentUser.role === "admin" ? (
             <Finance totals={totals} quotes={data.quotes} />
           ) : null}
@@ -2298,6 +2320,7 @@ export function RMApp() {
                 if (confirm("Apagar dados locais e carregar exemplos?"))
                   setData(defaultData());
               }}
+              role={currentUser.role}
             />
           ) : null}
         </main>
@@ -2573,10 +2596,12 @@ function Dashboard({
   quotes,
   events,
   onCreate,
+  onOpenOpportunities,
 }: {
   quotes: Quote[];
   events: CalendarEvent[];
   onCreate: () => void;
+  onOpenOpportunities: () => void;
 }) {
   const [period, setPeriod] = useState<"today" | "week" | "month" | "year">("today");
   const now = new Date();
@@ -2646,6 +2671,7 @@ function Dashboard({
         <Metric title="Orçamentos criados" value={String(periodQuotes.length)} />
         <Metric title="Emissões geradas" value={String(issued.length)} />
       </div>
+      <HolidayDashboardCard onOpen={onOpenOpportunities} />
       <div className="grid gap-5 xl:grid-cols-[1fr_1.2fr]">
         <Panel title="Seus próximos voos">
           {upcomingFlights.map((q) => (
@@ -3190,16 +3216,12 @@ function FlightsForm({
 function CompactFlightBlock({ title, flight, onChange, segments, onSegmentsChange, onRemove, showSummary = true }: { title: string; flight: Flight; onChange: (flight: Flight) => void; segments: Flight[]; onSegmentsChange: (segments: Flight[]) => void; onRemove?: () => void; showSummary?: boolean }) {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [expanded, setExpanded] = useState(true);
-  const [searchCode, setSearchCode] = useState("");
-  const [searchDate, setSearchDate] = useState("");
   const changePassengers = (passengers: Passenger[]) => onChange(syncPassengerBaggage({ ...flight, passengers }));
   const searchAirline = () => {
-    const code = searchCode.trim().toUpperCase() || flight.code;
+    const code = flight.code.trim().toUpperCase();
     const prefix = code.slice(0, 2);
     const airline = registeredAirlines.find((item) => item.code === prefix);
-    onChange({ ...flight, code, date: searchDate || flight.date, airline: airline?.name || flight.airline });
-    setSearchCode("");
-    setSearchDate("");
+    onChange({ ...flight, code, airline: airline?.name || flight.airline });
   };
   return (
     <section className="compact-flight-panel">
@@ -3214,8 +3236,8 @@ function CompactFlightBlock({ title, flight, onChange, segments, onSegmentsChang
         <div className="compact-flight-main">
           <div className="flight-search-row">
             <div className="compact-flight-fields">
-              <Field label="Código do voo"><input className="input" placeholder="IATA (ex.: AD4191)" value={searchCode} onChange={(e) => setSearchCode(e.target.value.toUpperCase())} /></Field>
-              <SingleDatePicker label="Data de partida" value={searchDate} onChange={setSearchDate} placeholder="Data de saída do voo" />
+              <Field label="Código do voo"><input className="input" placeholder="IATA (ex.: AD4191)" value={flight.code} onChange={(event) => onChange({ ...flight, code: event.target.value.toUpperCase() })} /></Field>
+              <SingleDatePicker label="Data de partida" value={flight.date} onChange={(date) => onChange({ ...flight, date })} placeholder="Data de saída do voo" />
             </div>
             <div className="compact-flight-actions">
               <button className="light-mini" type="button" onClick={searchAirline}><SearchIcon /> Pesquisar</button>
@@ -4246,7 +4268,7 @@ function IssueEditor({
   onSave: () => void;
   onDelete: () => void;
 }) {
-  const [tab, setTab] = useState<"details" | "reservation" | "options">(
+  const [tab, setTab] = useState<"details" | "reservation" | "options" | "attachments">(
     "details",
   );
   const [importOpen, setImportOpen] = useState(false);
@@ -4259,6 +4281,7 @@ function IssueEditor({
   const [newSupplierName, setNewSupplierName] = useState<string | null>(null);
   const [newClient, setNewClient] = useState<Client | null>(null);
   const [saveAttempted, setSaveAttempted] = useState(false);
+  const [attachmentError, setAttachmentError] = useState("");
   const missingDetails = missingIssueDetails(issue);
   const saveIssue = () => {
     setSaveAttempted(true);
@@ -4273,6 +4296,41 @@ function IssueEditor({
   const profit = issue.cashPrice - emissionCost;
   const updateIssue = (next: Partial<IssueDetails>) =>
     onChange({ ...issue, issue: { ...issue.issue, ...next } });
+  const addAttachments = async (fileList: FileList | null) => {
+    const files = Array.from(fileList ?? []);
+    if (!files.length) return;
+    const allowed = /\.(pdf|png|jpe?g|webp|docx?|xlsx?)$/i;
+    const allowedTypes = new Set(["", "application/octet-stream", "application/pdf", "image/png", "image/jpeg", "image/webp", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"]);
+    const invalid = files.find((file) => !allowed.test(file.name) || !allowedTypes.has(file.type));
+    if (invalid) { setAttachmentError(`Formato não permitido: ${invalid.name}`); return; }
+    const oversized = files.find((file) => file.size > 1.5 * 1024 * 1024);
+    if (oversized) { setAttachmentError(`${oversized.name} excede o limite de 1,5 MB.`); return; }
+    const currentSize = issue.issue.attachments.reduce((total, attachment) => total + attachment.size, 0);
+    const addedSize = files.reduce((total, file) => total + file.size, 0);
+    if (currentSize + addedSize > 2 * 1024 * 1024) { setAttachmentError("Os anexos desta emissão devem somar até 2 MB."); return; }
+    const nextAttachments = await Promise.all(files.map((file) => new Promise<IssueAttachment>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve({ id: uid(), name: file.name, type: file.type || "application/octet-stream", size: file.size, dataUrl: String(reader.result), createdAt: new Date().toISOString() });
+      reader.onerror = () => reject(new Error(`Não foi possível ler ${file.name}.`));
+      reader.readAsDataURL(file);
+    }))).catch((error: Error) => { setAttachmentError(error.message); return null; });
+    if (!nextAttachments) return;
+    updateIssue({ attachments: [...issue.issue.attachments, ...nextAttachments] });
+    setAttachmentError("");
+  };
+  const viewAttachment = (attachment: IssueAttachment) => {
+    try {
+      const encoded = attachment.dataUrl.slice(attachment.dataUrl.indexOf(",") + 1);
+      const binary = atob(encoded);
+      const bytes = new Uint8Array(binary.length);
+      for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+      const url = URL.createObjectURL(new Blob([bytes], { type: attachment.type }));
+      window.open(url, "_blank", "noopener,noreferrer");
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch {
+      setAttachmentError(`Não foi possível visualizar ${attachment.name}.`);
+    }
+  };
   const updateMiles = (next: Partial<IssueDetails>) => {
     const details = { ...issue.issue, ...next };
     const cost = (details.pointsAmount / 1000) * details.thousandCost + details.fees;
@@ -4339,6 +4397,12 @@ function IssueEditor({
           onClick={() => setTab("options")}
         >
           Opções
+        </button>
+        <button
+          className={tab === "attachments" ? "tab-active" : ""}
+          onClick={() => setTab("attachments")}
+        >
+          Anexos
         </button>
       </div>
       {tab === "details" ? (
@@ -4795,6 +4859,45 @@ function IssueEditor({
             <p>Localizador: {issue.issue.locator || "Não informado"}</p>
             <p className="document-price">{money(issue.cashPrice)}</p>
           </div>
+        </Panel>
+      ) : null}
+      {tab === "attachments" ? (
+        <Panel title="Anexos da emissão">
+          <div className="issue-attachment-toolbar">
+            <div>
+              <strong>Confirmações, vouchers e documentos</strong>
+              <small>PDF, JPG, PNG, WEBP, DOC/DOCX e XLS/XLSX. Até 1,5 MB por arquivo e 2 MB no total.</small>
+            </div>
+            <label className="light-mini issue-attachment-upload">
+              ＋ Adicionar anexos
+              <input
+                className="sr-only"
+                type="file"
+                multiple
+                accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.xls,.xlsx"
+                onChange={(event) => { void addAttachments(event.currentTarget.files); event.currentTarget.value = ""; }}
+              />
+            </label>
+          </div>
+          {attachmentError ? <p className="issue-attachment-error" role="alert">{attachmentError}</p> : null}
+          {issue.issue.attachments.length ? (
+            <ul className="issue-attachment-list">
+              {issue.issue.attachments.map((attachment) => (
+                <li key={attachment.id}>
+                  <span className="issue-attachment-icon" aria-hidden="true">▱</span>
+                  <div>
+                    <strong>{attachment.name}</strong>
+                    <small>{Math.max(1, Math.round(attachment.size / 1024)).toLocaleString("pt-BR")} KB</small>
+                  </div>
+                  <div className="issue-attachment-actions">
+                    <button className="dark-mini" type="button" onClick={() => viewAttachment(attachment)}>Visualizar</button>
+                    <a className="dark-mini" href={attachment.dataUrl} download={attachment.name}>Baixar</a>
+                    <button className="danger-mini" type="button" onClick={() => updateIssue({ attachments: issue.issue.attachments.filter((item) => item.id !== attachment.id) })}>Excluir</button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : <p className="issue-attachment-empty">Nenhum anexo adicionado.</p>}
         </Panel>
       ) : null}
       {importOpen ? (
@@ -5401,6 +5504,7 @@ function ClientModal({
             <DataItem label="Data de nascimento" value={draft.birthday} />
             <DataItem label="Email" value={draft.email} />
             <DataItem label="Telefone" value={draft.phone} />
+            <DataItem label="Cidade/UF" value={[draft.city, draft.state].filter(Boolean).join(" / ")} />
             <DataItem
               label="Número do passaporte"
               value={draft.passport}
@@ -5464,6 +5568,12 @@ function ClientModal({
                 }
                 placeholder="Adicionar endereço"
               />
+            </Field>
+            <Field label="Cidade">
+              <input className="input" value={draft.city || ""} onChange={(e) => setDraft({ ...draft, city: e.target.value, ibgeCode: undefined })} placeholder="Ex.: São Paulo" />
+            </Field>
+            <Field label="UF">
+              <input className="input" maxLength={2} value={draft.state || ""} onChange={(e) => setDraft({ ...draft, state: e.target.value.toUpperCase(), ibgeCode: undefined })} placeholder="SP" />
             </Field>
           </div>
         ) : null}
@@ -6178,6 +6288,73 @@ function Tutorials() {
     </div>
   );
 }
+type HolidayOpportunity = {
+  id: string; name: string; date: string; type: "NATIONAL" | "STATE" | "MUNICIPAL" | "OPTIONAL";
+  state: string | null; city: string | null; ibgeCode: string | null; verificationStatus: "CONFIRMED" | "PROJECTED" | "MANUAL";
+  kind: "LONG_WEEKEND" | "POSSIBLE_BRIDGE"; days: number; start: string; end: string; clientCount: number; daysUntil: number; priority: string;
+};
+type HolidayPayload = { opportunities: HolidayOpportunity[]; impactedClients: number; stats: { counts: Array<{ year: number; verification_status: string; count: number }>; municipalities: number; clientsWithIbge: number; distinctClientCities: number } };
+
+function useHolidayData() {
+  const [data, setData] = useState<HolidayPayload | null>(null);
+  const [error, setError] = useState("");
+  const load = () => void fetch("/api/holidays", { cache: "no-store" }).then(async (response) => { if (!response.ok) throw new Error(); return response.json(); }).then(setData).catch(() => setError("Não foi possível carregar as oportunidades."));
+  useEffect(load, []);
+  return { data, error, load };
+}
+
+function HolidayDashboardCard({ onOpen }: { onOpen: () => void }) {
+  const { data, error } = useHolidayData();
+  const next = data?.opportunities[0];
+  return <section className="holiday-dashboard-card"><div><span>✈ Oportunidades por Feriados</span><strong>{data ? `${data.opportunities.length} oportunidades futuras` : error || "Carregando..."}</strong><p>{data ? `${data.impactedClients} clientes impactados` : ""}</p>{next ? <small>Próxima oportunidade: {next.date.split("-").reverse().join("/")}</small> : null}</div><button className="gold-button" onClick={onOpen}>Ver oportunidades</button></section>;
+}
+
+function HolidayOpportunities({ role }: { role: "admin" | "user" }) {
+  const { data, error, load } = useHolidayData();
+  const [filters, setFilters] = useState({ period: "180", state: "", city: "", type: "", verification: "", kind: "" });
+  const [clients, setClients] = useState<Array<{ id: string; name: string; phone: string; city: string; state: string }> | null>(null);
+  const today = new Date();
+  const visible = (data?.opportunities || []).filter((row) => {
+    const date = new Date(`${row.date}T12:00:00`);
+    const periodMatch = filters.period === "2026" || filters.period === "2027" ? date.getFullYear() === Number(filters.period) : row.daysUntil <= Number(filters.period);
+    return periodMatch && (!filters.state || row.state === filters.state.toUpperCase()) && (!filters.city || (row.city || "").toLocaleLowerCase("pt-BR").includes(filters.city.toLocaleLowerCase("pt-BR"))) && (!filters.type || row.type === filters.type) && (!filters.verification || row.verificationStatus === filters.verification) && (!filters.kind || row.kind === filters.kind);
+  });
+  const showClients = async (row: HolidayOpportunity) => {
+    const params = new URLSearchParams({ type: row.type, state: row.state || "", ibgeCode: row.ibgeCode || "" });
+    const response = await fetch(`/api/holidays/clients?${params}`); const body = await response.json(); setClients(body.clients || []);
+  };
+  const adminAction = async (row: HolidayOpportunity, action: "confirm" | "deactivate" | "edit") => {
+    const body: Record<string, unknown> = { action: "save", id: row.id };
+    if (action === "confirm") body.verificationStatus = "MANUAL";
+    if (action === "deactivate") body.isActive = false;
+    if (action === "edit") { body.name = window.prompt("Nome do feriado", row.name) || row.name; body.date = window.prompt("Data (AAAA-MM-DD)", row.date) || row.date; }
+    await fetch("/api/holidays", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); load();
+  };
+  const campaign = (row: HolidayOpportunity) => navigator.clipboard?.writeText(`${row.name}: ${row.days} dias para viajar de ${row.start.split("-").reverse().join("/")} a ${row.end.split("-").reverse().join("/")}. Fale com a RM Partiu Viagens!`);
+  return <div className="holiday-page"><div><p className="holiday-kicker">Oportunidades / Feriados</p><h1>Feriados e oportunidades de viagem</h1><p className="text-[#9fc8ee]">Planejamento comercial até 31/12/2027. Hoje: {today.toLocaleDateString("pt-BR")}.</p></div>
+    <section className="holiday-filters">
+      <select className="input" value={filters.period} onChange={(e) => setFilters({ ...filters, period: e.target.value })}><option value="30">Próximos 30 dias</option><option value="60">60 dias</option><option value="90">90 dias</option><option value="180">180 dias</option><option value="2026">2026</option><option value="2027">2027</option></select>
+      <input className="input" placeholder="UF" maxLength={2} value={filters.state} onChange={(e) => setFilters({ ...filters, state: e.target.value })} /><input className="input" placeholder="Cidade" value={filters.city} onChange={(e) => setFilters({ ...filters, city: e.target.value })} />
+      <select className="input" value={filters.type} onChange={(e) => setFilters({ ...filters, type: e.target.value })}><option value="">Todos os tipos</option><option value="NATIONAL">Nacional</option><option value="STATE">Estadual</option><option value="MUNICIPAL">Municipal</option><option value="OPTIONAL">Facultativo</option></select>
+      <select className="input" value={filters.verification} onChange={(e) => setFilters({ ...filters, verification: e.target.value })}><option value="">Confirmado e projetado</option><option value="CONFIRMED">Confirmado</option><option value="PROJECTED">Projetado</option><option value="MANUAL">Manual</option></select>
+      <select className="input" value={filters.kind} onChange={(e) => setFilters({ ...filters, kind: e.target.value })}><option value="">Todas as oportunidades</option><option value="LONG_WEEKEND">Feriadão</option><option value="POSSIBLE_BRIDGE">Possível emenda</option></select>
+    </section>
+    {error ? <div className="empty-state"><p>{error}</p></div> : null}
+    <div className="table-wrap"><table className="holiday-table"><thead><tr><th>Feriado</th><th>Data</th><th>Local</th><th>Tipo</th><th>Status</th><th>Viagem</th><th>Clientes</th><th>Prioridade</th><th>Ações</th></tr></thead><tbody>{visible.map((row) => <tr key={row.id}><td><strong>{row.name}</strong><small>{row.kind === "LONG_WEEKEND" ? "Feriadão" : "Possível emenda"}</small></td><td>{new Date(`${row.date}T12:00:00`).toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric" })}<small>{row.daysUntil} dias</small></td><td>{row.city || "Brasil"}{row.state ? ` / ${row.state}` : ""}</td><td>{row.type}</td><td><span className={`holiday-badge ${row.verificationStatus === "PROJECTED" ? "projected" : "confirmed"}`} title={row.verificationStatus === "PROJECTED" ? "Data projetada com base na recorrência do feriado local do ano anterior. Pode sofrer alteração por legislação ou decreto municipal." : "Data confirmada."}>{row.verificationStatus === "PROJECTED" ? "● Projetado" : "✓ Confirmado"}</span></td><td>{row.start.split("-").reverse().join("/")}–{row.end.split("-").reverse().join("/")}<small>{row.days} dias</small></td><td>{row.clientCount}</td><td>{row.priority}</td><td><div className="holiday-actions"><button className="dark-mini" onClick={() => void showClients(row)}>Ver clientes</button><button className="dark-mini" onClick={() => campaign(row)}>Criar campanha</button>{role === "admin" ? <><button className="dark-mini" onClick={() => void adminAction(row, "edit")}>Editar</button>{row.verificationStatus === "PROJECTED" ? <button className="dark-mini" onClick={() => void adminAction(row, "confirm")}>Confirmar</button> : null}<button className="danger-mini" onClick={() => void adminAction(row, "deactivate")}>Desativar</button></> : null}</div></td></tr>)}</tbody></table></div>
+    {!error && data && visible.length === 0 ? <div className="empty-state"><h2>Nenhuma oportunidade neste filtro</h2><p>Amplie o período ou limpe os filtros.</p></div> : null}
+    {clients ? <div className="modal-backdrop"><div className="modal-card"><div className="modal-title"><h2>Clientes impactados</h2><button className="row-icon" onClick={() => setClients(null)}>×</button></div><div className="table-wrap"><table><thead><tr><th>Nome</th><th>Telefone</th><th>Cidade</th><th>UF</th></tr></thead><tbody>{clients.map((client) => <tr key={client.id}><td>{client.name}</td><td>{client.phone || "—"}</td><td>{client.city || "—"}</td><td>{client.state || "—"}</td></tr>)}</tbody></table></div>{clients.length === 0 ? <p className="text-[#9fc8ee]">Nenhum cliente localizado.</p> : null}</div></div> : null}
+  </div>;
+}
+
+function HolidaySettings() {
+  const { data, error, load } = useHolidayData();
+  const [busy, setBusy] = useState(false); const [message, setMessage] = useState(""); const [adding, setAdding] = useState(false);
+  const [form, setForm] = useState({ name: "", date: "", type: "NATIONAL", state: "", city: "" });
+  const count = (year: number, status: string) => data?.stats.counts.find((row) => Number(row.year) === year && row.verification_status === status)?.count || 0;
+  const action = async (name: string, extra: Record<string, unknown> = {}) => { setBusy(true); const response = await fetch("/api/holidays", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: name, ...extra }) }); const body = await response.json(); setMessage(body.message || body.error || "Base atualizada."); setBusy(false); load(); };
+  return <section className="settings-section holiday-settings"><div><h2>Feriados</h2><p className="settings-section-description">Base gratuita armazenada no CRM.</p></div><div className="holiday-coverage"><div><strong>2026</strong><span>Nacionais, estaduais e municipais ✓</span><small>{count(2026, "CONFIRMED")} confirmados</small></div><div><strong>2027</strong><span>Nacionais ✓ · locais projetados</span><small>{count(2027, "CONFIRMED")} confirmados · {count(2027, "PROJECTED")} projetados</small></div></div><p>{error || message}</p><div className="flex flex-wrap gap-2"><button className="gold-button" disabled={busy} onClick={() => void action("sync")}>Atualizar base</button><button className="dark-button" disabled={busy} onClick={() => void action("recalculate")}>Recalcular 2027</button><button className="dark-button" onClick={() => setAdding(!adding)}>Adicionar feriado</button></div>{adding ? <div className="holiday-add-form"><input className="input" placeholder="Nome" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /><input className="input" type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /><select className="input" value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}><option value="NATIONAL">Nacional</option><option value="STATE">Estadual</option><option value="MUNICIPAL">Municipal</option><option value="OPTIONAL">Facultativo</option></select><input className="input" placeholder="UF" maxLength={2} value={form.state} onChange={(e) => setForm({ ...form, state: e.target.value.toUpperCase() })} /><input className="input" placeholder="Cidade" value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} /><button className="light-mini" onClick={() => void action("save", form)}>Salvar feriado</button></div> : null}</section>;
+}
+
 function Billing() {
   return (
     <div className="grid gap-4">
@@ -6203,9 +6380,11 @@ function Billing() {
 function Settings({
   settings,
   onSave,
+  role,
 }: {
   settings: AppSettings;
   onSave: (settings: AppSettings) => void;
+  role: "admin" | "user";
   onExport: () => void;
   onImport: (file: File | null) => void;
   onReset: () => void;
@@ -6292,6 +6471,7 @@ function Settings({
         </Field>
         <SaveButton className="settings-save-button" onSave={() => onSave(form)} />
       </section>
+      {role === "admin" ? <HolidaySettings /> : null}
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { ensureSchema, getPool } from "@/lib/db";
 import { mergeState, settingsForUser, visibleState, type StatePayload } from "@/lib/access";
+import { assignClientIbgeCodes } from "@/lib/holiday-db";
 
 export const runtime = "nodejs";
 const STATE_ID = "primary";
@@ -42,7 +43,7 @@ export async function PUT(request: NextRequest) {
         return NextResponse.json({ error: "Dados alterados por outro usuário. Recarregue a página." }, { status: 409 });
       }
       const existing = current.rows[0].payload as StatePayload;
-      const merged = mergeState(existing, data as StatePayload, user);
+      const merged = await assignClientIbgeCodes(mergeState(existing, data as StatePayload, user));
       const saved = await client.query("UPDATE crm_state SET payload = $2::jsonb, updated_at = NOW() WHERE id = $1 RETURNING updated_at", [STATE_ID, JSON.stringify(merged)]);
       await client.query("COMMIT");
       return NextResponse.json({ ok: true, updatedAt: saved.rows[0].updated_at });
