@@ -1,12 +1,22 @@
+import "server-only";
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import type { NextRequest } from "next/server";
-import { getPool } from "@/lib/db";
+import { ensureTenantSchema, getPool } from "@/lib/db";
+import { INITIAL_AGENCY_ID, type UserRole } from "@/lib/tenant";
 
 export const SESSION_COOKIE = "rm_crm_session";
-export type AuthUser = { id: string; email: string; name: string; role: "admin" | "user" };
+export type AuthUser = {
+  id: string;
+  email: string;
+  name: string;
+  role: UserRole;
+  agencyId: string | null;
+  agencyName: string | null;
+  dataAgencyId: string;
+};
 
 export function authConfigured() {
-  return Boolean(process.env.CRM_ADMIN_EMAIL && process.env.CRM_ACCESS_PASSWORD && process.env.DATABASE_URL);
+  return Boolean(process.env.DATABASE_URL);
 }
 
 function valuesMatch(value: string, expected: string) {
@@ -38,6 +48,49 @@ function tokenHash(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
 
+let authSchemaPromise: Promise<void> | null = null;
+
+async function ensureAuthSecuritySchema() {
+  if (!authSchemaPromise) {
+    authSchemaPromise = ensureTenantSchema().then(() => getPool().query(`
+      CREATE TABLE IF NOT EXISTS crm_login_attempts (
+        key_hash TEXT PRIMARY KEY,
+        attempt_count INTEGER NOT NULL,
+        reset_at TIMESTAMPTZ NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS crm_login_attempts_reset_idx ON crm_login_attempts (reset_at)
+    `)).then(() => undefined).catch((error) => {
+      authSchemaPromise = null;
+      throw error;
+    });
+  }
+  await authSchemaPromise;
+}
+
+function attemptKey(value: string) {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+export async function allowLoginAttempt(keys: string[], limit: number, windowMs: number) {
+  await ensureAuthSecuritySchema();
+  const hashes = keys.map(attemptKey);
+  const results = await Promise.all(hashes.map((key) => getPool().query(
+    `INSERT INTO crm_login_attempts (key_hash, attempt_count, reset_at)
+     VALUES ($1, 1, NOW() + ($2 * INTERVAL '1 millisecond'))
+     ON CONFLICT (key_hash) DO UPDATE SET
+       attempt_count = CASE WHEN crm_login_attempts.reset_at <= NOW() THEN 1 ELSE LEAST(crm_login_attempts.attempt_count + 1, $3 + 1) END,
+       reset_at = CASE WHEN crm_login_attempts.reset_at <= NOW() THEN NOW() + ($2 * INTERVAL '1 millisecond') ELSE crm_login_attempts.reset_at END
+     RETURNING attempt_count <= $3 AS allowed`,
+    [key, windowMs, limit],
+  )));
+  return { allowed: results.every((result) => result.rows[0]?.allowed === true), hashes };
+}
+
+export async function clearLoginAttempts(hashes: string[]) {
+  if (!hashes.length) return;
+  await getPool().query("DELETE FROM crm_login_attempts WHERE key_hash = ANY($1::text[])", [hashes]);
+}
+
 export async function createSession(userId: string) {
   const token = randomBytes(32).toString("base64url");
   await getPool().query("INSERT INTO crm_sessions (token_hash, user_id, expires_at) VALUES ($1, $2, NOW() + INTERVAL '30 days')", [tokenHash(token), userId]);
@@ -52,13 +105,17 @@ export async function revokeSession(request: NextRequest) {
 export async function getSessionUser(request: NextRequest): Promise<AuthUser | null> {
   const token = request.cookies.get(SESSION_COOKIE)?.value;
   if (!token || token.length > 128) return null;
+  await ensureTenantSchema();
   const result = await getPool().query(
-    `SELECT u.id, u.email, u.name, u.role FROM crm_sessions s
+    `SELECT u.id, u.email, u.name, u.tenant_role AS role, u.agency_id AS "agencyId", a.name AS "agencyName" FROM crm_sessions s
      JOIN crm_users u ON u.id = s.user_id
-     WHERE s.token_hash = $1 AND s.expires_at > NOW() AND u.active = TRUE`,
+     LEFT JOIN agencies a ON a.id = u.agency_id
+     WHERE s.token_hash = $1 AND s.expires_at > NOW() AND u.active = TRUE
+       AND (u.tenant_role = 'super_admin' OR a.active = TRUE)`,
     [tokenHash(token)],
   );
-  return result.rows[0] ?? null;
+  const user = result.rows[0] as Omit<AuthUser, "dataAgencyId"> | undefined;
+  return user ? { ...user, dataAgencyId: user.agencyId || INITIAL_AGENCY_ID } : null;
 }
 
 export async function isAuthorized(request: NextRequest) {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ensureSchema, getPool } from "@/lib/db";
 import { fetchGooglePlaces, PLACES_NOT_CONFIGURED } from "@/lib/google-places";
+import { isShareId } from "@/lib/shared-quote";
 
 export const runtime = "nodejs";
 const photoPattern = /^places\/[A-Za-z0-9_-]+\/photos\/[A-Za-z0-9_-]+$/;
@@ -8,13 +9,13 @@ const photoPattern = /^places\/[A-Za-z0-9_-]+\/photos\/[A-Za-z0-9_-]+$/;
 export async function GET(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   const { id } = await context.params;
   const name = request.nextUrl.searchParams.get("name") ?? "";
-  if (!/^[0-9a-f-]{36}$/i.test(id) || !photoPattern.test(name)) {
+  if (!isShareId(id) || !photoPattern.test(name)) {
     return NextResponse.json({ error: "Foto inválida." }, { status: 400 });
   }
   try {
     await ensureSchema();
-    const result = await getPool().query("SELECT payload, quote_id FROM shared_quotes WHERE id = $1", [id]);
-    const state = await getPool().query("SELECT payload FROM crm_state WHERE id = $1", ["primary"]);
+    const result = await getPool().query("SELECT payload,quote_id,agency_id FROM shared_quotes WHERE id=$1", [id]);
+    const state = await getPool().query("SELECT payload FROM crm_state WHERE agency_id=$1", [result.rows[0]?.agency_id]);
     const currentQuotes = state.rows[0]?.payload?.quotes;
     const quote = Array.isArray(currentQuotes)
       ? currentQuotes.find((item: { id?: string }) => item.id === result.rows[0]?.quote_id) ?? result.rows[0]?.payload?.quote

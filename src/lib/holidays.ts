@@ -2,6 +2,15 @@ export type HolidayType = "NATIONAL" | "STATE" | "MUNICIPAL" | "OPTIONAL";
 export type HolidayVerification = "CONFIRMED" | "PROJECTED" | "MANUAL";
 export type ProjectionMethod = "FIXED_ANNUAL_RECURRENCE" | "EASTER_RELATIVE" | "LEGAL_FIXED_DATE" | null;
 
+export function normalizeHolidayType(value: string): HolidayType | null {
+  const normalized = value.trim().toUpperCase();
+  if (["MUNICIPAL", "MUNICIPIO", "CITY", "LOCAL"].includes(normalized)) return "MUNICIPAL";
+  if (["STATE", "ESTADUAL"].includes(normalized)) return "STATE";
+  if (["NATIONAL", "NACIONAL"].includes(normalized)) return "NATIONAL";
+  if (["OPTIONAL", "FACULTATIVO"].includes(normalized)) return "OPTIONAL";
+  return null;
+}
+
 export type HolidaySeed = {
   name: string;
   date: string;

@@ -1,3 +1,5 @@
+import "server-only";
+
 export const PLACES_NOT_CONFIGURED = "Integração com hospedagens ainda não configurada.";
 
 export function getGooglePlacesApiKey(): string | null {

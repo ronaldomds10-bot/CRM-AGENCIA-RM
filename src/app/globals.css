@@ -15,7 +15,12 @@
 
 .holiday-page { display: grid; gap: 18px; }
 .holiday-kicker { color: #ffc83d; font-weight: 800; }
-.holiday-filters { display: grid; grid-template-columns: repeat(6, minmax(130px, 1fr)); gap: 10px; padding: 14px; border: 1px solid #1c3148; border-radius: 8px; background: #030b16; }
+.holiday-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; padding: 14px; border: 1px solid #1c3148; border-radius: 8px; background: #030b16; }
+.holiday-summary { display: grid; grid-template-columns: repeat(5, minmax(120px, 1fr)); gap: 10px; }
+.holiday-summary > div { display: grid; gap: 5px; padding: 14px; border: 1px solid #1c3148; border-radius: 8px; background: #030b16; }
+.holiday-summary span { color: #9fc8ee; font-size: 12px; }
+.holiday-summary strong { font-size: 20px; }
+.holiday-location-result { padding: 10px 12px; border-left: 3px solid #ffc83d; background: #0b1726; }
 .holiday-table td { vertical-align: top; min-width: 110px; }
 .holiday-table td:first-child { min-width: 210px; }
 .holiday-table td:last-child { min-width: 190px; }
@@ -23,6 +28,11 @@
 .holiday-badge { display: inline-flex; white-space: nowrap; border-radius: 999px; padding: 4px 8px; font-size: 11px; font-weight: 800; }
 .holiday-badge.confirmed { color: #7ce7b2; background: #063d2b; }
 .holiday-badge.projected { color: #ffe49a; background: #4a3500; }
+.holiday-type-badge { display: inline-flex; white-space: nowrap; border: 1px solid #31506d; border-radius: 999px; padding: 4px 8px; font-size: 11px; font-weight: 800; }
+.holiday-type-badge.type-national { color: #9fd3ff; background: #0b2942; }
+.holiday-type-badge.type-state { color: #cbb7ff; background: #271b4a; }
+.holiday-type-badge.type-municipal { color: #7ce7b2; background: #063d2b; }
+.holiday-type-badge.type-optional { color: #ffe49a; background: #4a3500; }
 .holiday-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .holiday-dashboard-card { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 20px; border: 1px solid #31506d; border-radius: 10px; background: linear-gradient(120deg, #071b2d, #0b2439); }
 .holiday-dashboard-card span, .holiday-dashboard-card strong, .holiday-dashboard-card p, .holiday-dashboard-card small { display: block; }
@@ -33,7 +43,7 @@
 .holiday-coverage > div { display: grid; gap: 5px; padding: 14px; border: 1px solid #1c3148; border-radius: 8px; }
 .holiday-add-form { display: grid; grid-template-columns: repeat(5, minmax(120px, 1fr)); gap: 10px; }
 @media (max-width: 1100px) { .holiday-filters, .holiday-add-form { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 640px) { .holiday-filters, .holiday-add-form, .holiday-coverage { grid-template-columns: 1fr; } .holiday-dashboard-card { align-items: flex-start; flex-direction: column; } }
+@media (max-width: 640px) { .holiday-filters, .holiday-add-form, .holiday-coverage, .holiday-summary { grid-template-columns: 1fr; } .holiday-dashboard-card { align-items: flex-start; flex-direction: column; } }
 
 .shared-page { min-height: 100vh; background: #eef4ff; color: #101827; }
 .shared-header { display: flex; min-height: 5rem; align-items: center; justify-content: space-between; gap: 1rem; background: #fff; padding: 1rem max(1rem, calc((100vw - 1140px) / 2)); border-bottom: 1px solid #d8e1ef; }

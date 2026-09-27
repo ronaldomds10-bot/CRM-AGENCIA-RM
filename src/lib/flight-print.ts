@@ -3,6 +3,8 @@ export type PrintFlight = {
   airline: string;
   cabinClass?: string;
   passengerCount?: number;
+  passengerNames?: string[];
+  locator?: string;
   from: string;
   to: string;
   departTime: string;
@@ -84,6 +86,30 @@ function findStops(text: string): FlightStop[] {
   return stops.sort((left, right) => left.index - right.index);
 }
 
+function findRouteBlocks(text: string, now: Date, passengerCount?: number, cabinClass?: string, passengerNames?: string[], locator?: string) {
+  const routes = [...text.matchAll(/\bDE\s+[^\n]{1,120}?(?:\(|\b)([A-Z]{3})\)?\s+PARA\s+[^\n]{1,120}?(?:\(|\b)([A-Z]{3})\)?(?:\s|$)/g)];
+  return routes.flatMap<PrintFlight>((route, index) => {
+    const block = text.slice(route.index, routes[index + 1]?.index ?? text.length);
+    const times = [...block.matchAll(/\b(\d{1,2})\s*(?:H|[:.])\s*([0-5]\d)\b/g)];
+    if (times.length < 2 || route[1] === route[2]) return [];
+    const codeMatch = block.match(/\b([A-Z][A-Z0-9])\s*[- ]?(\d{2,4})\b/);
+    const code = codeMatch && airlineByPrefix[codeMatch[1]] ? `${codeMatch[1]}${codeMatch[2]}` : "";
+    return [{
+      code,
+      airline: codeMatch ? airlineByPrefix[codeMatch[1]] ?? "" : "",
+      cabinClass,
+      passengerCount: passengerNames?.length || passengerCount,
+      passengerNames,
+      locator,
+      from: route[1],
+      to: route[2],
+      departTime: `${times[0][1].padStart(2, "0")}:${times[0][2]}`,
+      arriveTime: `${times[1][1].padStart(2, "0")}:${times[1][2]}`,
+      date: findDates(block, now)[0]?.date ?? "",
+    }];
+  });
+}
+
 export function parseFlightPrint(rawText: string, now = new Date()): PrintFlight[] {
   const text = rawText.normalize("NFD").replace(/[\u0300-\u036f]/g, "").normalize("NFKC").toUpperCase().replace(/\r/g, "");
   const stops = findStops(text);
@@ -93,6 +119,11 @@ export function parseFlightPrint(rawText: string, now = new Date()): PrintFlight
     .filter((item) => item.airline);
   const passengerCount = Number(text.match(/\b(\d+)\s+PASSAGEIROS?\b/)?.[1] || 0) || undefined;
   const cabinClass = /\bECONOMICA\b/.test(text) ? "Econômica" : undefined;
+  const passengerName = text.match(/\n\s*([A-Z][A-Z ]{4,80})\s*\n\s*(?:ASSENTOS?|BAGAGEM)\b/)?.[1]?.trim();
+  const passengerNames = passengerName ? [passengerName] : undefined;
+  const locator = text.match(/(?:REFERENCIA DA RESERVA|LOCALIZADOR|RESERVA)\s*:?\s*([A-Z0-9]{5,8})\b/)?.[1];
+  const routeFlights = findRouteBlocks(text, now, passengerCount, cabinClass, passengerNames, locator);
+  if (routeFlights.length) return routeFlights;
   const flights: PrintFlight[] = [];
 
   for (let index = 0; index + 1 < stops.length; index += 2) {
@@ -102,7 +133,7 @@ export function parseFlightPrint(rawText: string, now = new Date()): PrintFlight
     const code = codes[flights.length];
     const nearestDate = dates.filter((item) => item.index < origin.index).at(-1) ?? dates[flights.length];
     flights.push({
-      code: code?.code ?? "", airline: code?.airline ?? "", cabinClass, passengerCount,
+      code: code?.code ?? "", airline: code?.airline ?? "", cabinClass, passengerCount, passengerNames, locator,
       from: origin.airport, to: destination.airport,
       departTime: origin.time, arriveTime: destination.time, date: nearestDate?.date ?? "",
     });

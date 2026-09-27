@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { calculateEaster, opportunityFor } from "../src/lib/holidays";
+import { calculateEaster, normalizeHolidayType, opportunityFor } from "../src/lib/holidays";
 
 test("calcula a Páscoa de 2026 e 2027", () => {
   expect(calculateEaster(2026)).toBe("2026-04-05");
@@ -10,4 +10,11 @@ test("detecta feriadão e possível emenda", () => {
   expect(opportunityFor("2026-12-25")).toMatchObject({ kind: "LONG_WEEKEND", days: 3 });
   expect(opportunityFor("2027-04-21")).toBeNull();
   expect(opportunityFor("2027-09-07")).toMatchObject({ kind: "POSSIBLE_BRIDGE", days: 4 });
+});
+
+test("padroniza tipos antigos", () => {
+  expect(normalizeHolidayType("municipio")).toBe("MUNICIPAL");
+  expect(normalizeHolidayType("estadual")).toBe("STATE");
+  expect(normalizeHolidayType("nacional")).toBe("NATIONAL");
+  expect(normalizeHolidayType("facultativo")).toBe("OPTIONAL");
 });

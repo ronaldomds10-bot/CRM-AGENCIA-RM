@@ -1,4 +1,5 @@
 import type { AuthUser } from "@/lib/auth";
+import { isAgencyManager } from "@/lib/tenant";
 
 export const RECORD_KEYS = ["quotes", "clients", "suppliers", "events"] as const;
 export type RecordKey = (typeof RECORD_KEYS)[number];
@@ -6,12 +7,12 @@ type CRMRecord = { id: string; ownerId?: string; assignedUserId?: string | null;
 export type StatePayload = { [key: string]: unknown } & { quotes: CRMRecord[]; clients: CRMRecord[]; suppliers: CRMRecord[]; events: CRMRecord[] };
 
 export function canAccessRecord(record: CRMRecord, user: AuthUser) {
-  return user.role === "admin" || (record.ownerId || "admin") === user.id || record.assignedUserId === user.id;
+  return isAgencyManager(user) || (record.ownerId || "admin") === user.id || record.assignedUserId === user.id;
 }
 
 export function settingsForUser(state: StatePayload, user: AuthUser) {
   const agency = (state.settings || {}) as Record<string, unknown>;
-  if (user.role === "admin") return agency;
+  if (isAgencyManager(user)) return agency;
   const saved = (state.userSettings as Record<string, Record<string, unknown>> | undefined)?.[user.id];
   return saved || {
     contactName: user.name,
@@ -28,7 +29,7 @@ export function settingsForUser(state: StatePayload, user: AuthUser) {
 }
 
 export function visibleState(state: StatePayload, user: AuthUser): StatePayload {
-  if (user.role === "admin") return state;
+  if (isAgencyManager(user)) return state;
   return {
     quotes: state.quotes.filter((record) => canAccessRecord(record, user)),
     clients: state.clients.filter((record) => canAccessRecord(record, user)),
@@ -51,17 +52,17 @@ export function mergeState(current: StatePayload, incoming: StatePayload, user: 
       seen.add(record.id);
       const old = byId.get(record.id);
       if (old && !canAccessRecord(old, user)) throw new Error("Registro não autorizado.");
-      if (user.role === "user") {
+      if (user.role === "agency_user") {
         if (record.ownerId && record.ownerId !== (old?.ownerId || (old ? "admin" : user.id))) throw new Error("Proprietário não autorizado.");
         if (record.assignedUserId && record.assignedUserId !== old?.assignedUserId) throw new Error("Atribuição não autorizada.");
       }
       return {
         ...record,
         ownerId: old?.ownerId || (old ? "admin" : user.id),
-        assignedUserId: user.role === "admin" ? record.assignedUserId ?? old?.assignedUserId ?? null : old?.assignedUserId ?? null,
+        assignedUserId: isAgencyManager(user) ? record.assignedUserId ?? old?.assignedUserId ?? null : old?.assignedUserId ?? null,
       };
     });
-    if (user.role === "admin") {
+    if (isAgencyManager(user)) {
       result[key] = next;
     } else {
       const missingAssigned = before.some((record) => record.assignedUserId === user.id && record.ownerId !== user.id && !seen.has(record.id));
@@ -69,7 +70,7 @@ export function mergeState(current: StatePayload, incoming: StatePayload, user: 
       result[key] = [...before.filter((record) => !canAccessRecord(record, user)), ...next];
     }
   }
-  if (user.role === "admin") result.settings = incoming.settings ?? current.settings;
+  if (isAgencyManager(user)) result.settings = incoming.settings ?? current.settings;
   else {
     const settings = incoming.settings as Record<string, unknown> | undefined;
     if (!settings || typeof settings !== "object" || Array.isArray(settings)) throw new Error("Configurações inválidas.");

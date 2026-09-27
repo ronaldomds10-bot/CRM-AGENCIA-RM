@@ -20,8 +20,11 @@ type ViewKey =
   | "billing"
   | "settings"
   | "users";
-type CurrentUser = { id: string; email: string; name: string; role: "admin" | "user" };
-type ManagedUser = CurrentUser & { active: boolean; created_at: string };
+type UserRole = "super_admin" | "agency_admin" | "agency_user";
+type CurrentUser = { id: string; email: string; name: string; role: UserRole; agencyId: string | null; agencyName: string | null; dataAgencyId: string };
+type ManagedUser = { id: string; email: string; name: string; role: UserRole; active: boolean; created_at: string; agency_id: string | null; agency_name?: string | null };
+type Agency = { id: string; name: string; slug: string; active: boolean; user_count: number };
+const isManagerRole = (role: UserRole) => role === "super_admin" || role === "agency_admin";
 type QuoteTab = "trip" | "flights" | "cars" | "hotels" | "insurance" | "tours" | "import";
 type Status = "cotacao" | "aguardando" | "emitido" | "cancelado";
 type Airport = { i: string; c: string; n: string; p: string };
@@ -320,6 +323,8 @@ type SharedQuote = { quote: Quote; settings: AppSettings };
 
 const STORAGE_KEY = "rm-travel-hub-local-v1";
 const LEGACY_STORAGE_KEY = `rm-partiu-${"air" + "pass"}-inspired-local-v1`;
+const CSRF_HEADERS = { "X-RM-CSRF": "1" } as const;
+const JSON_MUTATION_HEADERS = { ...CSRF_HEADERS, "Content-Type": "application/json" } as const;
 const nav: Array<{ key: ViewKey; label: string; icon: string }> = [
   { key: "dashboard", label: "Dashboard", icon: "⌂" },
   { key: "quotes", label: "Orçamentos", icon: "▣" },
@@ -908,26 +913,6 @@ function readData(): CRMData {
     return defaultData();
   }
 }
-function shareUrl(payload: SharedQuote) {
-  const bytes = new TextEncoder().encode(JSON.stringify(payload));
-  const encoded = btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join(""))
-    .replaceAll("+", "-")
-    .replaceAll("/", "_")
-    .replaceAll("=", "");
-  return `${window.location.origin}/#share=${encoded}`;
-}
-function readSharedQuote(): SharedQuote | null {
-  try {
-    const encoded = window.location.hash.match(/^#share=(.+)$/)?.[1];
-    if (!encoded) return null;
-    const base64 = encoded.replaceAll("-", "+").replaceAll("_", "/");
-    const bytes = Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
-    return JSON.parse(new TextDecoder().decode(bytes)) as SharedQuote;
-  } catch {
-    return null;
-  }
-}
-
 function pdfFileName(prefix: string, label: string) {
   const slug = label
     .normalize("NFD")
@@ -1571,7 +1556,7 @@ async function openHotelIssuePdf(issue: Quote, settings: AppSettings, downloadNa
     let names = hotel.photoNames ?? [];
     if (!names.length && hotel.name) {
       try {
-        const response = await fetch("/api/places/search", { method: "POST", cache: "no-store", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query: `${hotel.name} ${hotel.address}`.trim() }) });
+        const response = await fetch("/api/places/search", { method: "POST", cache: "no-store", headers: JSON_MUTATION_HEADERS, body: JSON.stringify({ query: `${hotel.name} ${hotel.address}`.trim() }) });
         const data = await response.json() as { places?: Array<{ photoNames?: string[] }> };
         names = data.places?.[0]?.photoNames ?? [];
       } catch { names = []; }
@@ -1926,12 +1911,6 @@ export function RMApp() {
   const stateVersion = useRef("");
 
   useEffect(() => {
-    const shared = readSharedQuote();
-    if (shared) {
-      setSharedQuote(shared);
-      setReady(true);
-      return;
-    }
     const sharedId = new URLSearchParams(window.location.search).get("share");
     if (sharedId) {
       let active = true;
@@ -1966,7 +1945,7 @@ export function RMApp() {
         const payload = await response.json() as { data: Partial<CRMData> | null; user: CurrentUser; updatedAt?: string };
         stateVersion.current = payload.updatedAt || "";
         if (payload.data) {
-          const normalized = normalizeData(payload.data, payload.user.role === "admin");
+          const normalized = normalizeData(payload.data, isManagerRole(payload.user.role));
           syncedData.current = JSON.stringify(normalized);
           setData(normalized);
         }
@@ -1974,7 +1953,7 @@ export function RMApp() {
           const localData = readData();
           const initialSave = await fetch("/api/crm-state", {
             method: "PUT",
-            headers: { "Content-Type": "application/json" },
+            headers: JSON_MUTATION_HEADERS,
             body: JSON.stringify(localData),
           });
           if (!initialSave.ok) throw new Error("Não foi possível importar os dados locais.");
@@ -2007,7 +1986,7 @@ export function RMApp() {
     saveTimer.current = setTimeout(() => {
       void fetch("/api/crm-state", {
         method: "PUT",
-        headers: { "Content-Type": "application/json", ...(currentUser?.role === "admin" && stateVersion.current ? { "If-Match": stateVersion.current } : {}) },
+        headers: { ...JSON_MUTATION_HEADERS, ...(currentUser && isManagerRole(currentUser.role) && stateVersion.current ? { "If-Match": stateVersion.current } : {}) },
         body: serialized,
       }).then(async (response) => {
         if (response.status === 401) { setAuthRequired(true); throw new Error("Sessão encerrada."); }
@@ -2059,7 +2038,6 @@ export function RMApp() {
     setEditing(quote);
     setQuoteTab("trip");
     setView("quotes");
-    flash("Novo orçamento criado.");
   }
   function createIssue() {
     const quote = {
@@ -2108,7 +2086,7 @@ export function RMApp() {
     if (loggingOut) return;
     setLoggingOut(true);
     try {
-      const response = await fetch("/api/auth/logout", { method: "POST" });
+      const response = await fetch("/api/auth/logout", { method: "POST", headers: CSRF_HEADERS });
       if (!response.ok) throw new Error();
       if (saveTimer.current) clearTimeout(saveTimer.current);
       setRemoteEnabled(false);
@@ -2140,8 +2118,8 @@ export function RMApp() {
         <Brand />
         <Nav current={view} onChange={setView} role={currentUser.role} />
         <div className="mt-auto grid gap-1 p-3">
-          {currentUser.role === "admin" ? <button className="nav-secondary" onClick={() => setView("users")}>Usuários</button> : null}
-          {currentUser.role === "admin" ? <button className="nav-secondary" onClick={() => setView("billing")}>Minha assinatura</button> : null}
+          {isManagerRole(currentUser.role) ? <button className="nav-secondary" onClick={() => setView("users")}>{currentUser.role === "super_admin" ? "Agências e usuários" : "Usuários"}</button> : null}
+          {isManagerRole(currentUser.role) ? <button className="nav-secondary" onClick={() => setView("billing")}>Minha assinatura</button> : null}
           <button className="nav-secondary" onClick={() => setView("settings")}>
             Configurações
           </button>
@@ -2186,8 +2164,8 @@ export function RMApp() {
                 }}
               />
               <div className="mobile-menu-footer">
-                {currentUser.role === "admin" ? <button className="nav-secondary" onClick={() => { setView("users"); setMenuOpen(false); }}>Usuários</button> : null}
-                {currentUser.role === "admin" ? <button className="nav-secondary" onClick={() => { setView("billing"); setMenuOpen(false); }}>
+                {isManagerRole(currentUser.role) ? <button className="nav-secondary" onClick={() => { setView("users"); setMenuOpen(false); }}>Usuários</button> : null}
+                {isManagerRole(currentUser.role) ? <button className="nav-secondary" onClick={() => { setView("billing"); setMenuOpen(false); }}>
                   Minha assinatura
                 </button> : null}
                 <button className="nav-secondary" onClick={() => { setView("settings"); setMenuOpen(false); }}>
@@ -2261,6 +2239,7 @@ export function RMApp() {
               }}
               onDelete={removeQuote}
               initialSearch={issueClientFilter}
+              onClearInitialSearch={() => setIssueClientFilter("")}
             />
           ) : null}
           {view === "clients" ? (
@@ -2274,8 +2253,8 @@ export function RMApp() {
               }}
             />
           ) : null}
-          {view === "opportunities" ? <HolidayOpportunities role={currentUser.role} /> : null}
-          {view === "finance" && currentUser.role === "admin" ? (
+          {view === "opportunities" ? <HolidayOpportunities role={currentUser.role} onNotify={flash} /> : null}
+          {view === "finance" && isManagerRole(currentUser.role) ? (
             <Finance totals={totals} quotes={data.quotes} />
           ) : null}
           {view === "calendar" ? (
@@ -2289,14 +2268,15 @@ export function RMApp() {
           {view === "suppliers" ? (
             <Suppliers
               suppliers={data.suppliers}
+              quotes={data.quotes}
               onChange={(suppliers) =>
                 setData((cur) => ({ ...cur, suppliers }))
               }
             />
           ) : null}
           {view === "tutorials" ? <Tutorials /> : null}
-          {view === "billing" && currentUser.role === "admin" ? <Billing /> : null}
-          {view === "users" && currentUser.role === "admin" ? <UsersAdmin currentUser={currentUser} onAssignment={async () => {
+          {view === "billing" && isManagerRole(currentUser.role) ? <Billing /> : null}
+          {view === "users" && isManagerRole(currentUser.role) ? <UsersAdmin currentUser={currentUser} onAssignment={async () => {
             if (saveTimer.current) clearTimeout(saveTimer.current);
             const response = await fetch("/api/crm-state", { cache: "no-store" });
             if (response.ok) {
@@ -2575,11 +2555,11 @@ function Nav({
 }: {
   current: ViewKey;
   onChange: (view: ViewKey) => void;
-  role: "admin" | "user";
+  role: UserRole;
 }) {
   return (
     <nav className="grid gap-1 p-3">
-      {nav.filter((item) => role === "admin" || item.key !== "finance").map((item) => (
+      {nav.filter((item) => isManagerRole(role) || item.key !== "finance").map((item) => (
         <button
           key={item.key}
           className={`nav-item ${current === item.key ? "nav-active" : ""}`}
@@ -2838,8 +2818,8 @@ function QuoteEditor({
     try {
       const response = await fetch("/api/shared-quotes", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ quote: draft, settings }),
+        headers: JSON_MUTATION_HEADERS,
+        body: JSON.stringify({ quoteId: draft.id }),
       });
       const result = await response.json() as { id?: string; error?: string };
       if (!response.ok || !result.id) throw new Error(result.error || "Não foi possível gerar o link.");
@@ -3541,7 +3521,7 @@ function HotelPlaceField({ value, onChange, onSelect }: { value: string; onChang
     const timer = window.setTimeout(async () => {
       setLoading(true); setError("");
       try {
-        const response = await fetch("/api/places/search", { method: "POST", cache: "no-store", signal: controller.signal, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query }) });
+        const response = await fetch("/api/places/search", { method: "POST", cache: "no-store", signal: controller.signal, headers: JSON_MUTATION_HEADERS, body: JSON.stringify({ query }) });
         const data = await response.json() as { places?: HotelPlace[]; error?: string };
         if (!response.ok) throw new Error(data.error || "Pesquisa indisponível.");
         setPlaces(data.places ?? []); setOpen(true);
@@ -3740,6 +3720,32 @@ function ToursForm({ quote, onChange }: { quote: Quote; onChange: (quote: Quote)
   );
 }
 
+async function prepareOcrImage(source: string) {
+  try {
+    const image = new Image();
+    await new Promise<void>((resolve, reject) => { image.onload = () => resolve(); image.onerror = reject; image.src = source; });
+    const scale = Math.min(2.4, Math.max(1, 1800 / image.naturalWidth, 1200 / image.naturalHeight));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.min(3200, Math.round(image.naturalWidth * scale));
+    canvas.height = Math.min(4400, Math.round(image.naturalHeight * scale));
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    if (!context) return source;
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    const frame = context.getImageData(0, 0, canvas.width, canvas.height);
+    let brightness = 0;
+    for (let index = 0; index < frame.data.length; index += 16) brightness += (frame.data[index] * 0.299) + (frame.data[index + 1] * 0.587) + (frame.data[index + 2] * 0.114);
+    const darkBackground = brightness / Math.ceil(frame.data.length / 16) < 125;
+    for (let index = 0; index < frame.data.length; index += 4) {
+      let gray = (frame.data[index] * 0.299) + (frame.data[index + 1] * 0.587) + (frame.data[index + 2] * 0.114);
+      if (darkBackground) gray = 255 - gray;
+      gray = Math.max(0, Math.min(255, (gray - 128) * 1.35 + 128));
+      frame.data[index] = gray; frame.data[index + 1] = gray; frame.data[index + 2] = gray;
+    }
+    context.putImageData(frame, 0, 0);
+    return canvas.toDataURL("image/jpeg", 0.94);
+  } catch { return source; }
+}
+
 function ExternalQuoteImport({ quote, onChange }: { quote: Quote; onChange: (quote: Quote) => void }) {
   const [url, setUrl] = useState("");
   const [file, setFile] = useState<File | null>(null);
@@ -3771,7 +3777,7 @@ function ExternalQuoteImport({ quote, onChange }: { quote: Quote; onChange: (quo
     if (!url.trim() || status === "loading") return;
     setStatus("loading"); setError("");
     try {
-      const response = await fetch("/api/quotes/import", { method: "POST", cache: "no-store", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: url.trim() }) });
+      const response = await fetch("/api/quotes/import", { method: "POST", cache: "no-store", headers: JSON_MUTATION_HEADERS, body: JSON.stringify({ url: url.trim() }) });
       applyImport(await readImportResponse(response, "Falha ao importar URL. Tente novamente."));
     } catch (requestError) {
       setStatus("idle"); setError(requestError instanceof Error ? requestError.message : "Falha ao importar URL.");
@@ -3782,7 +3788,7 @@ function ExternalQuoteImport({ quote, onChange }: { quote: Quote; onChange: (quo
     setStatus("loading"); setError("");
     try {
       const body = new FormData(); body.append("file", file);
-      const response = await fetch("/api/quotes/import", { method: "POST", cache: "no-store", body });
+      const response = await fetch("/api/quotes/import", { method: "POST", cache: "no-store", headers: CSRF_HEADERS, body });
       applyImport(await readImportResponse(response, "Falha ao importar PDF. Tente novamente."));
     } catch (requestError) {
       setStatus("idle"); setError(requestError instanceof Error ? requestError.message : "Falha ao importar PDF.");
@@ -3826,10 +3832,22 @@ function ExternalQuoteImport({ quote, onChange }: { quote: Quote; onChange: (quo
     try {
       const { createWorker } = await import("tesseract.js");
       worker = await createWorker(["por", "eng"]);
+      await worker.setParameters({ preserve_interword_spaces: "1" });
       const recognized: string[] = [];
       for (const image of images) {
-        const { data } = await worker.recognize(image);
+        const { data } = await worker.recognize(await prepareOcrImage(image));
         recognized.push(data.text);
+      }
+      const structuredResponse = await fetch("/api/quotes/import", {
+        method: "POST",
+        cache: "no-store",
+        headers: JSON_MUTATION_HEADERS,
+        body: JSON.stringify({ text: recognized.join("\n\n") }),
+      });
+      if (structuredResponse.ok) {
+        const structured = await readImportResponse(structuredResponse, "Não foi possível interpretar o print.");
+        applyImport({ ...structured, flightPrint: undefined, flightPrints: images });
+        return;
       }
       const smiles = parseSmilesDocument(recognized.join("\n"));
       if (smiles) {
@@ -3868,20 +3886,27 @@ function ExternalQuoteImport({ quote, onChange }: { quote: Quote; onChange: (quo
         flights.push(...found);
       }
       const returnIndex = returnFlightIndex(flights);
-      const makeFlight = (flight: typeof flights[number], existing: Flight, tripDate: string) => normalizeFlight({
-        ...existing,
-        segmentId: uid(),
-        code: flight.code,
-        airline: flight.airline,
-        cabinClass: flight.cabinClass || existing.cabinClass,
-        adults: flight.passengerCount ?? existing.adults,
-        from: flight.from,
-        to: flight.to,
-        departTime: flight.departTime,
-        arriveTime: flight.arriveTime,
-        date: flight.date || existing.date || tripDate,
-        arrivalDate: flight.date || existing.arrivalDate || tripDate,
-      });
+      const makeFlight = (flight: typeof flights[number], existing: Flight, tripDate: string) => {
+        const passengers = flight.passengerNames?.map((fullName) => {
+          const [name = "", ...surname] = fullName.split(/\s+/);
+          return { id: uid(), name, surname: surname.join(" "), ticket: "", checkedBags: 0, carryOnBags: 0, backpacks: 0 };
+        });
+        return normalizeFlight({
+          ...existing,
+          segmentId: uid(),
+          code: flight.code,
+          airline: flight.airline,
+          cabinClass: flight.cabinClass || existing.cabinClass,
+          adults: passengers?.length || flight.passengerCount || existing.adults,
+          passengers: passengers || existing.passengers,
+          from: flight.from,
+          to: flight.to,
+          departTime: flight.departTime,
+          arriveTime: flight.arriveTime,
+          date: flight.date || existing.date || tripDate,
+          arrivalDate: flight.date || existing.arrivalDate || tripDate,
+        });
+      };
       const outbound = (returnIndex < 0 ? flights : flights.slice(0, returnIndex))
         .map((flight, index) => makeFlight(flight, index === 0 ? quote.flightOut : quote.flightOutSegments?.[index - 1] ?? emptyFlight(), quote.startDate));
       const inbound = returnIndex < 0 ? [] : flights.slice(returnIndex)
@@ -3897,6 +3922,8 @@ function ExternalQuoteImport({ quote, onChange }: { quote: Quote; onChange: (quo
         endDate: quote.endDate || inbound.at(-1)?.date || outbound.at(-1)?.date || "",
         route: quote.route || [outbound[0].from, ...outbound.map((flight) => flight.to)].join(" → "),
         destination: quote.destination || outbound[outbound.length - 1].to,
+        client: quote.client || flights[0].passengerNames?.[0] || "",
+        issue: { ...quote.issue, locator: flights.find((flight) => flight.locator)?.locator || quote.issue.locator },
       });
       setStatus("success");
     } catch (importError) {
@@ -3920,9 +3947,9 @@ function ExternalQuoteImport({ quote, onChange }: { quote: Quote; onChange: (quo
           <button className="light-mini" type="button" disabled={!file || status === "loading"} onClick={importPdf}>{status === "loading" ? "Importando..." : "Importar PDF"}</button>
         </div>
       </Panel>
-      <Panel title="Print de voos">
+      <Panel title="Print do orçamento">
         <div className="flight-print-import">
-          <div className="flight-print-drop" tabIndex={0} role="group" aria-label="Cole o print de voos com Ctrl+V"
+          <div className="flight-print-drop" tabIndex={0} role="group" aria-label="Cole o print do orçamento com Ctrl+V"
             onPaste={async (event) => {
               const image = Array.from(event.clipboardData.files).find((item) => item.type.startsWith("image/"));
               if (image) {
@@ -3937,9 +3964,9 @@ function ExternalQuoteImport({ quote, onChange }: { quote: Quote; onChange: (quo
               const images = await attachFlightPrint(Array.from(event.dataTransfer.files).find((item) => item.type.startsWith("image/")) ?? null);
               if (images) await importFlightPrint(images);
             }}>
-            <strong>Cole o print aqui com Ctrl+V</strong>
+            <strong>Cole o print do orçamento aqui com Ctrl+V</strong>
             <span>ou selecione uma imagem do computador</span>
-            <input className="input" type="file" accept="image/*" aria-label="Selecionar print de voos" onChange={async (event) => {
+            <input className="input" type="file" accept="image/*" aria-label="Selecionar print do orçamento" onChange={async (event) => {
               const image = event.currentTarget.files?.[0] ?? null;
               event.currentTarget.value = "";
               const images = await attachFlightPrint(image);
@@ -3948,7 +3975,7 @@ function ExternalQuoteImport({ quote, onChange }: { quote: Quote; onChange: (quo
           </div>
           {flightPrints.length ? <div className="flight-print-list">{flightPrints.map((image, index) => (
             <div className="flight-print-item" key={`${index}-${image.length}`}>
-              <img className="flight-print-preview" src={image} alt={`Print de voos ${index + 1}`} />
+              <img className="flight-print-preview" src={image} alt={`Print do orçamento ${index + 1}`} />
               <button className="danger-mini" type="button" disabled={status === "loading"} onClick={() => {
                 const nextPrints = flightPrints.filter((_, itemIndex) => itemIndex !== index);
                 flightPrintsRef.current = nextPrints;
@@ -3957,8 +3984,8 @@ function ExternalQuoteImport({ quote, onChange }: { quote: Quote; onChange: (quo
               }}>Remover print {index + 1}</button>
             </div>
           ))}</div> : null}
-          <button className="light-mini" type="button" disabled={!flightPrints.length || status === "loading"} onClick={() => void importFlightPrint()}>{status === "loading" ? "Lendo prints..." : `Preencher voos (${flightPrints.length} ${flightPrints.length === 1 ? "print" : "prints"})`}</button>
-          <small>Confira códigos, aeroportos, horários e datas na aba Voos antes de salvar.</small>
+          <button className="light-mini" type="button" disabled={!flightPrints.length || status === "loading"} onClick={() => void importFlightPrint()}>{status === "loading" ? "Lendo prints..." : `Preencher orçamento (${flightPrints.length} ${flightPrints.length === 1 ? "print" : "prints"})`}</button>
+          <small>O OCR identifica voos, passageiros, datas, valores, hotel, carro, seguro e serviços. Revise os campos antes de salvar.</small>
         </div>
       </Panel>
       {status === "success" ? <p className="text-sm text-emerald-300" role="status">Importação concluída. Revise as abas e salve.</p> : null}
@@ -3978,6 +4005,7 @@ function Issues({
   onSave,
   onDelete,
   initialSearch = "",
+  onClearInitialSearch,
 }: {
   quotes: Quote[];
   clients: Client[];
@@ -3989,6 +4017,7 @@ function Issues({
   onSave: (q: Quote) => void;
   onDelete: (id: string) => void;
   initialSearch?: string;
+  onClearInitialSearch?: () => void;
 }) {
   const [editingIssue, setEditingIssue] = useState<Quote | null>(null);
   const [search, setSearch] = useState(initialSearch);
@@ -4071,6 +4100,7 @@ function Issues({
         </div>
       </div>
       <button className="filter-button issues-filter-button" onClick={() => setFiltersOpen((open) => !open)}>⊕ Adicionar filtro</button>
+      {search ? <div className="flex items-center justify-between gap-3 rounded-md border border-[#1c3148] px-3 py-2"><span>Emissões de <strong>{search}</strong></span><button className="dark-mini" onClick={() => { setSearch(""); onClearInitialSearch?.(); }}>Ver todas as emissões</button></div> : null}
       {filtersOpen ? (
         <Panel title="Filtros da emissão">
           <div className="form-grid">
@@ -5074,7 +5104,7 @@ function IssueImportModal({
       const response = await fetch("/api/issues/import-flight", {
         method: "POST",
         cache: "no-store",
-        headers: { "Content-Type": "application/json" },
+        headers: JSON_MUTATION_HEADERS,
         body: JSON.stringify({ airline, locator: locator.trim(), surname: surname.trim(), departureAirport: departureAirport.trim() }),
       });
       const result = await response.json() as { data?: ImportedFlightData; error?: string };
@@ -5939,9 +5969,11 @@ function Calendar({
 }
 function Suppliers({
   suppliers,
+  quotes,
   onChange,
 }: {
   suppliers: Supplier[];
+  quotes: Quote[];
   onChange: (s: Supplier[]) => void;
 }) {
   const [search, setSearch] = useState("");
@@ -5951,6 +5983,27 @@ function Suppliers({
   const [menuId, setMenuId] = useState<string | null>(null);
   const [pageSize, setPageSize] = useState(10);
   const [page, setPage] = useState(1);
+  const milesBySupplier = useMemo(() => {
+    const totals = new Map<string, { total: number; origins: Map<string, number> }>();
+    quotes.filter((quote) => quote.isIssue && !quote.isDemo && quote.status !== "cancelado" && quote.issue.method === "miles").forEach((quote) => {
+      const key = quote.issue.milesSupplier.trim().toLocaleLowerCase("pt-BR");
+      if (!key) return;
+      const amount = Number(quote.issue.pointsAmount || 0);
+      const origin = quote.issue.provider.trim() || "Não informado";
+      const current = totals.get(key) || { total: 0, origins: new Map<string, number>() };
+      current.total += amount;
+      current.origins.set(origin, (current.origins.get(origin) || 0) + amount);
+      totals.set(key, current);
+    });
+    return totals;
+  }, [quotes]);
+  const formatMiles = (value: number) => new Intl.NumberFormat("pt-BR").format(value);
+  const supplierMileage = (supplier: Supplier) => milesBySupplier.get(supplier.name.trim().toLocaleLowerCase("pt-BR"));
+  const supplierMiles = (supplier: Supplier) => supplierMileage(supplier)?.total || 0;
+  const supplierOrigins = (supplier: Supplier) => {
+    const origins = supplierMileage(supplier)?.origins;
+    return origins?.size ? Array.from(origins).sort((a, b) => b[1] - a[1]).map(([name, amount]) => `${name}: ${formatMiles(amount)}`).join(" · ") : "—";
+  };
   const filtered = suppliers.filter((s) =>
     `${s.name} ${s.phone ?? s.contact} ${s.document ?? ""} ${s.counter ?? ""}`
       .toLowerCase()
@@ -6012,6 +6065,8 @@ function Suppliers({
                 <th>Telefone　↕</th>
                 <th>Balcão　↕</th>
                 <th>CPF/CNPJ　↕</th>
+                <th>Milhas compradas</th>
+                <th>Origem das milhas</th>
                 <th>Criado em</th>
                 <th aria-label="Ações" />
               </tr>
@@ -6027,6 +6082,8 @@ function Suppliers({
                   </td>
                   <td>{s.counter || s.type || "Não definido"}</td>
                   <td>{s.document || "Não definido"}</td>
+                  <td><strong>{formatMiles(supplierMiles(s))}</strong></td>
+                  <td>{supplierOrigins(s)}</td>
                   <td>
                     <strong>
                       {s.createdAt
@@ -6087,6 +6144,8 @@ function Suppliers({
                 <strong>{s.name}</strong>
                 <p>{s.phone || s.contact || "Não definido"}</p>
                 <p>{s.document || s.counter || s.type || "Não definido"}</p>
+                <p><strong>{formatMiles(supplierMiles(s))}</strong> milhas compradas</p>
+                <p>Origem: {supplierOrigins(s)}</p>
               </div>
               <div className="supplier-card-actions">
                 <button
@@ -6293,14 +6352,16 @@ type HolidayOpportunity = {
   state: string | null; city: string | null; ibgeCode: string | null; verificationStatus: "CONFIRMED" | "PROJECTED" | "MANUAL";
   kind: "LONG_WEEKEND" | "POSSIBLE_BRIDGE"; days: number; start: string; end: string; clientCount: number; daysUntil: number; priority: string;
 };
-type HolidayPayload = { opportunities: HolidayOpportunity[]; impactedClients: number; stats: { counts: Array<{ year: number; verification_status: string; count: number }>; municipalities: number; clientsWithIbge: number; distinctClientCities: number } };
+type HolidayRow = Omit<HolidayOpportunity, "kind" | "days" | "start" | "end"> & { year: number; opportunity: null | { kind: HolidayOpportunity["kind"]; days: number; start: string; end: string } };
+type HolidayPayload = { holidays: HolidayRow[]; opportunities: HolidayOpportunity[]; impactedClients: number; truncated: boolean; locationError?: string; selectedLocation?: { city: string; state: string; ibge_code: string }; stats: { counts: Array<{ year: number; verification_status: string; count: number }>; typeCounts: Array<{ type: HolidayRow["type"]; count: number }>; years: number[]; municipalCities: number; incompleteMunicipal: number; municipalities: number; clientsWithIbge: number; distinctClientCities: number } };
 
-function useHolidayData() {
+function useHolidayData(query = "") {
   const [data, setData] = useState<HolidayPayload | null>(null);
   const [error, setError] = useState("");
-  const load = () => void fetch("/api/holidays", { cache: "no-store" }).then(async (response) => { if (!response.ok) throw new Error(); return response.json(); }).then(setData).catch(() => setError("Não foi possível carregar as oportunidades."));
-  useEffect(load, []);
-  return { data, error, load };
+  const [loading, setLoading] = useState(true);
+  const load = () => { setLoading(true); setError(""); void fetch(`/api/holidays${query ? `?${query}` : ""}`, { cache: "no-store" }).then(async (response) => { if (!response.ok) throw new Error(); return response.json(); }).then(setData).catch(() => setError("Não foi possível carregar os feriados.")).finally(() => setLoading(false)); };
+  useEffect(load, [query]);
+  return { data, error, loading, load };
 }
 
 function HolidayDashboardCard({ onOpen }: { onOpen: () => void }) {
@@ -6309,7 +6370,7 @@ function HolidayDashboardCard({ onOpen }: { onOpen: () => void }) {
   return <section className="holiday-dashboard-card"><div><span>✈ Oportunidades por Feriados</span><strong>{data ? `${data.opportunities.length} oportunidades futuras` : error || "Carregando..."}</strong><p>{data ? `${data.impactedClients} clientes impactados` : ""}</p>{next ? <small>Próxima oportunidade: {next.date.split("-").reverse().join("/")}</small> : null}</div><button className="gold-button" onClick={onOpen}>Ver oportunidades</button></section>;
 }
 
-function HolidayOpportunities({ role }: { role: "admin" | "user" }) {
+function HolidayOpportunitiesLegacy({ role }: { role: UserRole }) {
   const { data, error, load } = useHolidayData();
   const [filters, setFilters] = useState({ period: "180", state: "", city: "", type: "", verification: "", kind: "" });
   const [clients, setClients] = useState<Array<{ id: string; name: string; phone: string; city: string; state: string }> | null>(null);
@@ -6328,7 +6389,7 @@ function HolidayOpportunities({ role }: { role: "admin" | "user" }) {
     if (action === "confirm") body.verificationStatus = "MANUAL";
     if (action === "deactivate") body.isActive = false;
     if (action === "edit") { body.name = window.prompt("Nome do feriado", row.name) || row.name; body.date = window.prompt("Data (AAAA-MM-DD)", row.date) || row.date; }
-    await fetch("/api/holidays", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); load();
+    await fetch("/api/holidays", { method: "POST", headers: JSON_MUTATION_HEADERS, body: JSON.stringify(body) }); load();
   };
   const campaign = (row: HolidayOpportunity) => navigator.clipboard?.writeText(`${row.name}: ${row.days} dias para viajar de ${row.start.split("-").reverse().join("/")} a ${row.end.split("-").reverse().join("/")}. Fale com a RM Partiu Viagens!`);
   return <div className="holiday-page"><div><p className="holiday-kicker">Oportunidades / Feriados</p><h1>Feriados e oportunidades de viagem</h1><p className="text-[#9fc8ee]">Planejamento comercial até 31/12/2027. Hoje: {today.toLocaleDateString("pt-BR")}.</p></div>
@@ -6340,8 +6401,88 @@ function HolidayOpportunities({ role }: { role: "admin" | "user" }) {
       <select className="input" value={filters.kind} onChange={(e) => setFilters({ ...filters, kind: e.target.value })}><option value="">Todas as oportunidades</option><option value="LONG_WEEKEND">Feriadão</option><option value="POSSIBLE_BRIDGE">Possível emenda</option></select>
     </section>
     {error ? <div className="empty-state"><p>{error}</p></div> : null}
-    <div className="table-wrap"><table className="holiday-table"><thead><tr><th>Feriado</th><th>Data</th><th>Local</th><th>Tipo</th><th>Status</th><th>Viagem</th><th>Clientes</th><th>Prioridade</th><th>Ações</th></tr></thead><tbody>{visible.map((row) => <tr key={row.id}><td><strong>{row.name}</strong><small>{row.kind === "LONG_WEEKEND" ? "Feriadão" : "Possível emenda"}</small></td><td>{new Date(`${row.date}T12:00:00`).toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric" })}<small>{row.daysUntil} dias</small></td><td>{row.city || "Brasil"}{row.state ? ` / ${row.state}` : ""}</td><td>{row.type}</td><td><span className={`holiday-badge ${row.verificationStatus === "PROJECTED" ? "projected" : "confirmed"}`} title={row.verificationStatus === "PROJECTED" ? "Data projetada com base na recorrência do feriado local do ano anterior. Pode sofrer alteração por legislação ou decreto municipal." : "Data confirmada."}>{row.verificationStatus === "PROJECTED" ? "● Projetado" : "✓ Confirmado"}</span></td><td>{row.start.split("-").reverse().join("/")}–{row.end.split("-").reverse().join("/")}<small>{row.days} dias</small></td><td>{row.clientCount}</td><td>{row.priority}</td><td><div className="holiday-actions"><button className="dark-mini" onClick={() => void showClients(row)}>Ver clientes</button><button className="dark-mini" onClick={() => campaign(row)}>Criar campanha</button>{role === "admin" ? <><button className="dark-mini" onClick={() => void adminAction(row, "edit")}>Editar</button>{row.verificationStatus === "PROJECTED" ? <button className="dark-mini" onClick={() => void adminAction(row, "confirm")}>Confirmar</button> : null}<button className="danger-mini" onClick={() => void adminAction(row, "deactivate")}>Desativar</button></> : null}</div></td></tr>)}</tbody></table></div>
+    <div className="table-wrap"><table className="holiday-table"><thead><tr><th>Feriado</th><th>Data</th><th>Local</th><th>Tipo</th><th>Status</th><th>Viagem</th><th>Clientes</th><th>Prioridade</th><th>Ações</th></tr></thead><tbody>{visible.map((row) => <tr key={row.id}><td><strong>{row.name}</strong><small>{row.kind === "LONG_WEEKEND" ? "Feriadão" : "Possível emenda"}</small></td><td>{new Date(`${row.date}T12:00:00`).toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric" })}<small>{row.daysUntil} dias</small></td><td>{row.city || "Brasil"}{row.state ? ` / ${row.state}` : ""}</td><td>{row.type}</td><td><span className={`holiday-badge ${row.verificationStatus === "PROJECTED" ? "projected" : "confirmed"}`} title={row.verificationStatus === "PROJECTED" ? "Data projetada com base na recorrência do feriado local do ano anterior. Pode sofrer alteração por legislação ou decreto municipal." : "Data confirmada."}>{row.verificationStatus === "PROJECTED" ? "● Projetado" : "✓ Confirmado"}</span></td><td>{row.start.split("-").reverse().join("/")}–{row.end.split("-").reverse().join("/")}<small>{row.days} dias</small></td><td>{row.clientCount}</td><td>{row.priority}</td><td><div className="holiday-actions"><button className="dark-mini" onClick={() => void showClients(row)}>Ver clientes</button><button className="dark-mini" onClick={() => campaign(row)}>Criar campanha</button>{isManagerRole(role) ? <><button className="dark-mini" onClick={() => void adminAction(row, "edit")}>Editar</button>{row.verificationStatus === "PROJECTED" ? <button className="dark-mini" onClick={() => void adminAction(row, "confirm")}>Confirmar</button> : null}<button className="danger-mini" onClick={() => void adminAction(row, "deactivate")}>Desativar</button></> : null}</div></td></tr>)}</tbody></table></div>
     {!error && data && visible.length === 0 ? <div className="empty-state"><h2>Nenhuma oportunidade neste filtro</h2><p>Amplie o período ou limpe os filtros.</p></div> : null}
+    {clients ? <div className="modal-backdrop"><div className="modal-card"><div className="modal-title"><h2>Clientes impactados</h2><button className="row-icon" onClick={() => setClients(null)}>×</button></div><div className="table-wrap"><table><thead><tr><th>Nome</th><th>Telefone</th><th>Cidade</th><th>UF</th></tr></thead><tbody>{clients.map((client) => <tr key={client.id}><td>{client.name}</td><td>{client.phone || "—"}</td><td>{client.city || "—"}</td><td>{client.state || "—"}</td></tr>)}</tbody></table></div>{clients.length === 0 ? <p className="text-[#9fc8ee]">Nenhum cliente localizado.</p> : null}</div></div> : null}
+  </div>;
+}
+
+function HolidayOpportunities({ role, onNotify }: { role: UserRole; onNotify: (message: string) => void }) {
+  const [filters, setFilters] = useState({ state: "", city: "", ibgeCode: "", type: "", year: "2026", verification: "" });
+  const [applied, setApplied] = useState(filters);
+  const query = useMemo(() => {
+    const params = new URLSearchParams();
+    Object.entries(applied).forEach(([key, value]) => { if (value) params.set(key, value); });
+    return params.toString();
+  }, [applied]);
+  const { data, error, loading, load } = useHolidayData(query);
+  const [clients, setClients] = useState<Array<{ id: string; name: string; phone: string; city: string; state: string }> | null>(null);
+  const rows = data?.holidays || [];
+  const labels: Record<HolidayRow["type"], string> = { NATIONAL: "Nacional", STATE: "Estadual", MUNICIPAL: "Municipal", OPTIONAL: "Ponto facultativo" };
+  const count = (type: HolidayRow["type"]) => data?.stats.typeCounts.find((item) => item.type === type)?.count || 0;
+  const showClients = async (row: HolidayRow) => {
+    try {
+      const params = new URLSearchParams({ type: row.type, state: row.state || "", ibgeCode: row.ibgeCode || "" });
+      const response = await fetch(`/api/holidays/clients?${params}`);
+      const body = await response.json() as { clients?: Array<{ id: string; name: string; phone: string; city: string; state: string }>; error?: string };
+      if (!response.ok) throw new Error(body.error || "Não foi possível carregar os clientes.");
+      setClients(body.clients || []);
+    } catch (cause) { onNotify(cause instanceof Error ? cause.message : "Não foi possível carregar os clientes."); }
+  };
+  const adminAction = async (row: HolidayRow, action: "confirm" | "deactivate" | "edit") => {
+    const body: Record<string, unknown> = { action: "save", id: row.id };
+    if (action === "confirm") body.verificationStatus = "MANUAL";
+    if (action === "deactivate") { if (!window.confirm(`Desativar ${row.name}?`)) return; body.isActive = false; }
+    if (action === "edit") {
+      const name = window.prompt("Nome do feriado", row.name); if (name === null) return;
+      const date = window.prompt("Data (AAAA-MM-DD)", row.date); if (date === null) return;
+      body.name = name; body.date = date;
+    }
+    try {
+      const response = await fetch("/api/holidays", { method: "POST", headers: JSON_MUTATION_HEADERS, body: JSON.stringify(body) });
+      const result = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(result.error || "Não foi possível concluir a ação.");
+      onNotify(action === "edit" ? "Feriado atualizado." : action === "deactivate" ? "Feriado desativado." : "Feriado confirmado.");
+      load();
+    } catch (cause) { onNotify(cause instanceof Error ? cause.message : "Não foi possível concluir a ação."); }
+  };
+  const campaign = (row: HolidayRow) => {
+    if (!row.opportunity) return;
+    const message = `${row.name}: ${row.opportunity.days} dias para viajar de ${row.opportunity.start.split("-").reverse().join("/")} a ${row.opportunity.end.split("-").reverse().join("/")}. Fale com a RM Partiu Viagens!`;
+    window.open(`https://api.whatsapp.com/send/?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
+    void navigator.clipboard?.writeText(message).catch(() => undefined);
+    onNotify("Campanha aberta no WhatsApp e texto copiado.");
+  };
+  return <div className="holiday-page">
+    <div><p className="holiday-kicker">Oportunidades / Feriados</p><h1>Feriados e oportunidades de viagem</h1><p className="text-[#9fc8ee]">Base nacional, estadual, municipal e facultativa de 2026 e 2027.</p></div>
+    <section className="holiday-summary" aria-label="Resumo dos feriados">
+      <div><span>Total de feriados</span><strong>{data ? data.stats.typeCounts.reduce((sum, item) => sum + item.count, 0) : "—"}</strong></div>
+      <div><span>Nacionais</span><strong>{count("NATIONAL")}</strong></div><div><span>Estaduais</span><strong>{count("STATE")}</strong></div><div><span>Municipais</span><strong>{count("MUNICIPAL")}</strong></div><div><span>Facultativos</span><strong>{count("OPTIONAL")}</strong></div>
+    </section>
+    <section className="holiday-filters">
+      <select className="input" aria-label="Tipo" value={filters.type} onChange={(e) => setFilters({ ...filters, type: e.target.value })}><option value="">Todos</option><option value="NATIONAL">Nacional</option><option value="STATE">Estadual</option><option value="MUNICIPAL">Municipal</option><option value="OPTIONAL">Ponto facultativo</option></select>
+      <input className="input" aria-label="UF" placeholder="UF" maxLength={2} value={filters.state} onChange={(e) => setFilters({ ...filters, state: e.target.value.toUpperCase() })} />
+      <input className="input" aria-label="Cidade" placeholder="Cidade" value={filters.city} onChange={(e) => setFilters({ ...filters, city: e.target.value })} />
+      <input className="input" aria-label="Código IBGE" inputMode="numeric" placeholder="Código IBGE" value={filters.ibgeCode} onChange={(e) => setFilters({ ...filters, ibgeCode: e.target.value.replace(/\D/g, "") })} />
+      <select className="input" aria-label="Ano" value={filters.year} onChange={(e) => setFilters({ ...filters, year: e.target.value })}><option value="">Todos os anos</option><option value="2026">2026</option><option value="2027">2027</option></select>
+      <select className="input" aria-label="Confirmação" value={filters.verification} onChange={(e) => setFilters({ ...filters, verification: e.target.value })}><option value="">Confirmado/Projetado</option><option value="CONFIRMED">Confirmado</option><option value="PROJECTED">Projetado</option><option value="MANUAL">Manual</option></select>
+      <button className="gold-button" onClick={() => setApplied(filters)}>Aplicar filtros</button>
+    </section>
+    {data?.selectedLocation ? <p className="holiday-location-result">Localidade: <strong>{data.selectedLocation.city}/{data.selectedLocation.state}</strong> · IBGE {data.selectedLocation.ibge_code}</p> : null}
+    {data?.locationError ? <div className="empty-state"><p>{data.locationError}</p></div> : null}
+    {error ? <div className="empty-state"><p>{error}</p></div> : null}
+    {loading ? <div className="empty-state"><p>Carregando feriados...</p></div> : null}
+    {!loading && !error && !data?.locationError ? <div className="table-wrap"><table className="holiday-table"><thead><tr><th>Feriado</th><th>Data</th><th>Local</th><th>Tipo</th><th>Status</th><th>Viagem</th><th>Clientes</th><th>Prioridade</th><th>Ações</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id}>
+      <td><strong>{row.name}</strong>{row.opportunity ? <small>{row.opportunity.kind === "LONG_WEEKEND" ? "Feriadão" : "Possível emenda"}</small> : null}</td>
+      <td>{new Date(`${row.date}T12:00:00`).toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric" })}<small>{row.daysUntil >= 0 ? `${row.daysUntil} dias` : "Encerrado"}</small></td>
+      <td>{row.city || "Brasil"}{row.state ? ` / ${row.state}` : ""}{row.ibgeCode ? <small>IBGE {row.ibgeCode}</small> : null}</td>
+      <td><span className={`holiday-type-badge type-${row.type.toLowerCase()}`}>{labels[row.type]}</span></td>
+      <td><span className={`holiday-badge ${row.verificationStatus === "PROJECTED" ? "projected" : "confirmed"}`} title={row.verificationStatus === "PROJECTED" ? "Data projetada com base na recorrência do feriado local do ano anterior. Pode sofrer alteração por legislação ou decreto municipal." : "Data confirmada."}>{row.verificationStatus === "PROJECTED" ? "● Projetado" : "✓ Confirmado"}</span></td>
+      <td>{row.opportunity ? <>{row.opportunity.start.split("-").reverse().join("/")}–{row.opportunity.end.split("-").reverse().join("/")}<small>{row.opportunity.days} dias</small></> : "—"}</td><td>{row.clientCount}</td><td>{row.priority}</td>
+      <td><div className="holiday-actions"><button className="dark-mini" onClick={() => void showClients(row)}>Ver clientes</button>{row.opportunity ? <button className="dark-mini" onClick={() => campaign(row)}>Criar campanha</button> : null}{isManagerRole(role) ? <><button className="dark-mini" onClick={() => void adminAction(row, "edit")}>Editar</button>{row.verificationStatus === "PROJECTED" ? <button className="dark-mini" onClick={() => void adminAction(row, "confirm")}>Confirmar</button> : null}<button className="danger-mini" onClick={() => void adminAction(row, "deactivate")}>Desativar</button></> : null}</div></td>
+    </tr>)}</tbody></table></div> : null}
+    {data?.truncated ? <p className="text-[#9fc8ee]">Mostrando os primeiros 750 registros. Refine os filtros.</p> : null}
+    {!loading && !error && data && rows.length === 0 && !data.locationError ? <div className="empty-state"><h2>Nenhum feriado encontrado</h2><p>Revise os filtros informados.</p></div> : null}
     {clients ? <div className="modal-backdrop"><div className="modal-card"><div className="modal-title"><h2>Clientes impactados</h2><button className="row-icon" onClick={() => setClients(null)}>×</button></div><div className="table-wrap"><table><thead><tr><th>Nome</th><th>Telefone</th><th>Cidade</th><th>UF</th></tr></thead><tbody>{clients.map((client) => <tr key={client.id}><td>{client.name}</td><td>{client.phone || "—"}</td><td>{client.city || "—"}</td><td>{client.state || "—"}</td></tr>)}</tbody></table></div>{clients.length === 0 ? <p className="text-[#9fc8ee]">Nenhum cliente localizado.</p> : null}</div></div> : null}
   </div>;
 }
@@ -6351,7 +6492,7 @@ function HolidaySettings() {
   const [busy, setBusy] = useState(false); const [message, setMessage] = useState(""); const [adding, setAdding] = useState(false);
   const [form, setForm] = useState({ name: "", date: "", type: "NATIONAL", state: "", city: "" });
   const count = (year: number, status: string) => data?.stats.counts.find((row) => Number(row.year) === year && row.verification_status === status)?.count || 0;
-  const action = async (name: string, extra: Record<string, unknown> = {}) => { setBusy(true); const response = await fetch("/api/holidays", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: name, ...extra }) }); const body = await response.json(); setMessage(body.message || body.error || "Base atualizada."); setBusy(false); load(); };
+  const action = async (name: string, extra: Record<string, unknown> = {}) => { setBusy(true); const response = await fetch("/api/holidays", { method: "POST", headers: JSON_MUTATION_HEADERS, body: JSON.stringify({ action: name, ...extra }) }); const body = await response.json(); setMessage(body.message || body.error || "Base atualizada."); setBusy(false); load(); };
   return <section className="settings-section holiday-settings"><div><h2>Feriados</h2><p className="settings-section-description">Base gratuita armazenada no CRM.</p></div><div className="holiday-coverage"><div><strong>2026</strong><span>Nacionais, estaduais e municipais ✓</span><small>{count(2026, "CONFIRMED")} confirmados</small></div><div><strong>2027</strong><span>Nacionais ✓ · locais projetados</span><small>{count(2027, "CONFIRMED")} confirmados · {count(2027, "PROJECTED")} projetados</small></div></div><p>{error || message}</p><div className="flex flex-wrap gap-2"><button className="gold-button" disabled={busy} onClick={() => void action("sync")}>Atualizar base</button><button className="dark-button" disabled={busy} onClick={() => void action("recalculate")}>Recalcular 2027</button><button className="dark-button" onClick={() => setAdding(!adding)}>Adicionar feriado</button></div>{adding ? <div className="holiday-add-form"><input className="input" placeholder="Nome" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /><input className="input" type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /><select className="input" value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}><option value="NATIONAL">Nacional</option><option value="STATE">Estadual</option><option value="MUNICIPAL">Municipal</option><option value="OPTIONAL">Facultativo</option></select><input className="input" placeholder="UF" maxLength={2} value={form.state} onChange={(e) => setForm({ ...form, state: e.target.value.toUpperCase() })} /><input className="input" placeholder="Cidade" value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} /><button className="light-mini" onClick={() => void action("save", form)}>Salvar feriado</button></div> : null}</section>;
 }
 
@@ -6384,7 +6525,7 @@ function Settings({
 }: {
   settings: AppSettings;
   onSave: (settings: AppSettings) => void;
-  role: "admin" | "user";
+  role: UserRole;
   onExport: () => void;
   onImport: (file: File | null) => void;
   onReset: () => void;
@@ -6471,7 +6612,7 @@ function Settings({
         </Field>
         <SaveButton className="settings-save-button" onSave={() => onSave(form)} />
       </section>
-      {role === "admin" ? <HolidaySettings /> : null}
+      {isManagerRole(role) ? <HolidaySettings /> : null}
     </div>
   );
 }
@@ -7061,23 +7202,34 @@ type Assignment = { key: "quotes" | "clients" | "suppliers" | "events"; id: stri
 function UsersAdmin({ currentUser, onAssignment }: { currentUser: CurrentUser; onAssignment: () => Promise<void> }) {
   const [users, setUsers] = useState<ManagedUser[]>([]);
   const [records, setRecords] = useState<Assignment[]>([]);
-  const [form, setForm] = useState({ name: "", email: "", password: "", role: "user" });
+  const [agencies, setAgencies] = useState<Agency[]>([]);
+  const [form, setForm] = useState({ name: "", email: "", password: "", role: "agency_user" as UserRole, agencyId: currentUser.agencyId || "" });
+  const [agencyForm, setAgencyForm] = useState({ name: "", adminName: "", adminEmail: "", adminPassword: "" });
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const load = async () => {
-    const [usersResponse, recordsResponse] = await Promise.all([fetch("/api/admin/users", { cache: "no-store" }), fetch("/api/admin/assignments", { cache: "no-store" })]);
+    const [usersResponse, recordsResponse, agenciesResponse] = await Promise.all([
+      fetch("/api/admin/users", { cache: "no-store" }),
+      fetch("/api/admin/assignments", { cache: "no-store" }),
+      currentUser.role === "super_admin" ? fetch("/api/admin/agencies", { cache: "no-store" }) : Promise.resolve(null),
+    ]);
     if (!usersResponse.ok || !recordsResponse.ok) throw new Error("Não foi possível carregar usuários e atribuições.");
     setUsers((await usersResponse.json() as { users: ManagedUser[] }).users);
     setRecords((await recordsResponse.json() as { records: Assignment[] }).records);
+    if (agenciesResponse?.ok) {
+      const rows = (await agenciesResponse.json() as { agencies: Agency[] }).agencies;
+      setAgencies(rows);
+      setForm((current) => ({ ...current, agencyId: current.agencyId || rows.find((agency) => agency.active)?.id || "" }));
+    }
   };
   useEffect(() => { void load().catch((cause) => setError(cause instanceof Error ? cause.message : "Falha ao carregar.")); }, []);
   const create = async (event: React.FormEvent) => {
     event.preventDefault(); setBusy(true); setError("");
     try {
-      const response = await fetch("/api/admin/users", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
+      const response = await fetch("/api/admin/users", { method: "POST", headers: JSON_MUTATION_HEADERS, body: JSON.stringify(form) });
       const body = await response.json() as { error?: string };
       if (!response.ok) throw new Error(body.error || "Não foi possível criar usuário.");
-      setForm({ name: "", email: "", password: "", role: "user" });
+      setForm((current) => ({ name: "", email: "", password: "", role: "agency_user", agencyId: current.agencyId }));
       await load();
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Falha ao criar usuário."); }
     finally { setBusy(false); }
@@ -7089,38 +7241,98 @@ function UsersAdmin({ currentUser, onAssignment }: { currentUser: CurrentUser; o
     if (email === null) return;
     const password = prompt("Nova senha (deixe vazio para manter)", "");
     if (password === null) return;
-    const role = user.id === "admin" ? "admin" : (prompt("Perfil: admin ou user", user.role) || user.role);
+    const role = user.id === "admin" ? "super_admin" : (prompt("Perfil: agency_admin ou agency_user", user.role) || user.role);
     const body = { name, email, role, ...(password ? { password } : {}) };
-    const response = await fetch(`/api/admin/users/${encodeURIComponent(user.id)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const response = await fetch(`/api/admin/users/${encodeURIComponent(user.id)}`, { method: "PATCH", headers: JSON_MUTATION_HEADERS, body: JSON.stringify(body) });
     const result = await response.json() as { error?: string };
     if (!response.ok) { setError(result.error || "Não foi possível editar usuário."); return; }
     setError(""); await load();
   };
+  const changePassword = async (user: ManagedUser) => {
+    const passwordInput = prompt(`Nova senha para ${user.name} (mín. 12 caracteres)`, "");
+    if (passwordInput === null) return;
+    const password = passwordInput.trim();
+    if (password.length < 12) { setError("A nova senha deve ter pelo menos 12 caracteres."); return; }
+    const confirmation = prompt("Repita a nova senha", "");
+    if (confirmation === null) return;
+    if (password !== confirmation.trim()) { setError("As senhas digitadas não são iguais."); return; }
+    const response = await fetch(`/api/admin/users/${encodeURIComponent(user.id)}`, { method: "PATCH", headers: JSON_MUTATION_HEADERS, body: JSON.stringify({ password }) });
+    const result = await response.json() as { error?: string };
+    if (!response.ok) { setError(result.error || "Não foi possível alterar a senha."); return; }
+    setError("");
+    alert("Senha alterada com sucesso.");
+  };
+  const changeEmail = async (user: ManagedUser) => {
+    const email = prompt(`Novo e-mail para ${user.name}`, user.email)?.trim().toLowerCase();
+    if (!email) return;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { setError("Informe um e-mail válido."); return; }
+    const response = await fetch(`/api/admin/users/${encodeURIComponent(user.id)}`, { method: "PATCH", headers: JSON_MUTATION_HEADERS, body: JSON.stringify({ email }) });
+    const result = await response.json() as { error?: string };
+    if (!response.ok) { setError(result.error || "Não foi possível alterar o e-mail."); return; }
+    setError(""); await load();
+    alert("E-mail alterado com sucesso.");
+  };
   const toggle = async (user: ManagedUser) => {
-    const response = await fetch(`/api/admin/users/${encodeURIComponent(user.id)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ active: !user.active }) });
+    const response = await fetch(`/api/admin/users/${encodeURIComponent(user.id)}`, { method: "PATCH", headers: JSON_MUTATION_HEADERS, body: JSON.stringify({ active: !user.active }) });
     const result = await response.json() as { error?: string };
     if (!response.ok) { setError(result.error || "Não foi possível alterar usuário."); return; }
     setError(""); await load();
   };
+  const remove = async (user: ManagedUser) => {
+    if (!confirm(`Excluir ${user.name}? O e-mail ficará disponível para novo cadastro.`)) return;
+    const response = await fetch(`/api/admin/users/${encodeURIComponent(user.id)}`, { method: "DELETE", headers: JSON_MUTATION_HEADERS });
+    const result = await response.json() as { error?: string };
+    if (!response.ok) { setError(result.error || "Não foi possível excluir o usuário."); return; }
+    setError(""); await load(); await onAssignment();
+  };
   const assign = async (record: Assignment, assignedUserId: string) => {
-    const response = await fetch("/api/admin/assignments", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: record.key, id: record.id, assignedUserId }) });
+    const response = await fetch("/api/admin/assignments", { method: "PATCH", headers: JSON_MUTATION_HEADERS, body: JSON.stringify({ key: record.key, id: record.id, assignedUserId }) });
     const result = await response.json() as { error?: string };
     if (!response.ok) { setError(result.error || "Não foi possível atribuir registro."); return; }
     setRecords((items) => items.map((item) => item.key === record.key && item.id === record.id ? { ...item, assignedUserId } : item));
     await onAssignment();
   };
+  const createAgency = async (event: React.FormEvent) => {
+    event.preventDefault(); setBusy(true); setError("");
+    try {
+      const response = await fetch("/api/admin/agencies", { method: "POST", headers: JSON_MUTATION_HEADERS, body: JSON.stringify(agencyForm) });
+      const result = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(result.error || "Não foi possível criar a agência.");
+      setAgencyForm({ name: "", adminName: "", adminEmail: "", adminPassword: "" });
+      await load();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Falha ao criar agência."); }
+    finally { setBusy(false); }
+  };
+  const toggleAgency = async (agency: Agency) => {
+    const response = await fetch(`/api/admin/agencies/${agency.id}`, { method: "PATCH", headers: JSON_MUTATION_HEADERS, body: JSON.stringify({ active: !agency.active }) });
+    const result = await response.json() as { error?: string };
+    if (!response.ok) { setError(result.error || "Não foi possível alterar a agência."); return; }
+    await load();
+  };
+  const roleLabel = (role: UserRole) => role === "super_admin" ? "Superadmin" : role === "agency_admin" ? "Administrador" : "Usuário";
   return <div className="grid gap-5">
-    <div><h1 className="text-2xl font-bold">Usuários</h1><p className="text-sm text-[#9fc8ee]">Gerencie o acesso e atribua registros operacionais.</p></div>
+    <div><h1 className="text-2xl font-bold">{currentUser.role === "super_admin" ? "Agências e usuários" : "Usuários"}</h1><p className="text-sm text-[#9fc8ee]">Gerencie acessos isolados por agência.</p></div>
     {error ? <p className="rounded border border-red-500 p-3 text-red-300" role="alert">{error}</p> : null}
-    <form className="grid gap-3 rounded-lg border border-[#1c3148] p-4 md:grid-cols-5" onSubmit={create}>
+    {currentUser.role === "super_admin" ? <>
+      <form className="grid gap-3 rounded-lg border border-[#1c3148] p-4 md:grid-cols-5" onSubmit={createAgency}>
+        <input className="input" placeholder="Nome da agência" value={agencyForm.name} onChange={(event) => setAgencyForm({ ...agencyForm, name: event.target.value })} required />
+        <input className="input" placeholder="Nome do administrador" value={agencyForm.adminName} onChange={(event) => setAgencyForm({ ...agencyForm, adminName: event.target.value })} required />
+        <input className="input" type="email" placeholder="E-mail do administrador" value={agencyForm.adminEmail} onChange={(event) => setAgencyForm({ ...agencyForm, adminEmail: event.target.value })} required />
+        <input className="input" type="password" minLength={12} placeholder="Senha (mín. 12 caracteres)" value={agencyForm.adminPassword} onChange={(event) => setAgencyForm({ ...agencyForm, adminPassword: event.target.value })} required />
+        <button className="gold-button" type="submit" disabled={busy}>Criar agência</button>
+      </form>
+      <div className="table-wrap"><table><thead><tr><th>Agência</th><th>Slug</th><th>Usuários</th><th>Status</th><th>Ações</th></tr></thead><tbody>{agencies.map((agency) => <tr key={agency.id}><td>{agency.name}</td><td>{agency.slug}</td><td>{agency.user_count}</td><td>{agency.active ? "Ativa" : "Inativa"}</td><td><button className="dark-mini" type="button" onClick={() => void toggleAgency(agency)}>{agency.active ? "Desativar" : "Ativar"}</button></td></tr>)}</tbody></table></div>
+    </> : null}
+    <form className={`grid gap-3 rounded-lg border border-[#1c3148] p-4 ${currentUser.role === "super_admin" ? "md:grid-cols-6" : "md:grid-cols-5"}`} onSubmit={create}>
       <input className="input" aria-label="Nome" placeholder="Nome" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required />
       <input className="input" aria-label="E-mail" placeholder="E-mail" type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} required />
       <input className="input" aria-label="Senha" placeholder="Senha (mín. 12 caracteres)" type="password" minLength={12} value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} required />
-      <select className="input" aria-label="Perfil" value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value })}><option value="user">Usuário</option><option value="admin">Administrador</option></select>
+      <select className="input" aria-label="Perfil" value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value as UserRole })}><option value="agency_user">Usuário</option><option value="agency_admin">Administrador</option></select>
+      {currentUser.role === "super_admin" ? <select className="input" aria-label="Agência" value={form.agencyId} onChange={(event) => setForm({ ...form, agencyId: event.target.value })} required><option value="">Agência</option>{agencies.filter((agency) => agency.active).map((agency) => <option key={agency.id} value={agency.id}>{agency.name}</option>)}</select> : null}
       <button className="gold-button" type="submit" disabled={busy}>Criar usuário</button>
     </form>
-    <div className="table-wrap"><table><thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Status</th><th>Ações</th></tr></thead><tbody>{users.map((user) => <tr key={user.id}><td>{user.name}</td><td>{user.email}</td><td>{user.role === "admin" ? "Administrador" : "Usuário"}</td><td>{user.active ? "Ativo" : "Inativo"}</td><td><button className="dark-mini" type="button" onClick={() => void edit(user)}>Editar</button>{user.id !== "admin" && user.id !== currentUser.id ? <button className="dark-mini ml-2" type="button" onClick={() => void toggle(user)}>{user.active ? "Desativar" : "Ativar"}</button> : null}</td></tr>)}</tbody></table></div>
-    <section className="grid gap-3"><h2 className="text-xl font-bold">Atribuir registros</h2><div className="table-wrap"><table><thead><tr><th>Tipo</th><th>Registro</th><th>Responsável</th></tr></thead><tbody>{records.map((record) => <tr key={`${record.key}-${record.id}`}><td>{{ quotes: "Orçamento/Emissão", clients: "Cliente", suppliers: "Fornecedor", events: "Evento" }[record.key]}</td><td>{record.label}</td><td><select className="input" aria-label={`Atribuir ${record.label}`} value={record.assignedUserId} onChange={(event) => void assign(record, event.target.value)}><option value="">Sem atribuição</option>{users.filter((user) => user.role === "user" && user.active).map((user) => <option value={user.id} key={user.id}>{user.name}</option>)}</select></td></tr>)}</tbody></table></div></section>
+    <div className="table-wrap"><table><thead><tr><th>Nome</th><th>E-mail</th>{currentUser.role === "super_admin" ? <th>Agência</th> : null}<th>Perfil</th><th>Status</th><th>Ações</th></tr></thead><tbody>{users.map((user) => <tr key={user.id}><td>{user.name}</td><td>{user.email}</td>{currentUser.role === "super_admin" ? <td>{user.agency_name || "Global"}</td> : null}<td>{roleLabel(user.role)}</td><td>{user.active ? "Ativo" : "Inativo"}</td><td><button className="dark-mini" type="button" onClick={() => void edit(user)}>Editar</button>{user.id !== "admin" ? <button className="dark-mini ml-2" type="button" onClick={() => void changeEmail(user)}>Alterar e-mail</button> : null}<button className="dark-mini ml-2" type="button" onClick={() => void changePassword(user)}>Alterar senha</button>{user.id !== "admin" && user.id !== currentUser.id ? <><button className="dark-mini ml-2" type="button" onClick={() => void toggle(user)}>{user.active ? "Desativar" : "Ativar"}</button><button className="danger-mini ml-2" type="button" onClick={() => void remove(user)}>Excluir</button></> : null}</td></tr>)}</tbody></table></div>
+    <section className="grid gap-3"><h2 className="text-xl font-bold">Atribuir registros</h2><div className="table-wrap"><table><thead><tr><th>Tipo</th><th>Registro</th><th>Responsável</th></tr></thead><tbody>{records.map((record) => <tr key={`${record.key}-${record.id}`}><td>{{ quotes: "Orçamento/Emissão", clients: "Cliente", suppliers: "Fornecedor", events: "Evento" }[record.key]}</td><td>{record.label}</td><td><select className="input" aria-label={`Atribuir ${record.label}`} value={record.assignedUserId} onChange={(event) => void assign(record, event.target.value)}><option value="">Sem atribuição</option>{users.filter((user) => user.role === "agency_user" && user.active && user.agency_id === currentUser.dataAgencyId).map((user) => <option value={user.id} key={user.id}>{user.name}</option>)}</select></td></tr>)}</tbody></table></div></section>
   </div>;
 }
 
@@ -7136,7 +7348,7 @@ function LoginState({ onSuccess }: { onSuccess: () => void }) {
     try {
       const response = await fetch("/api/auth/login", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: JSON_MUTATION_HEADERS,
         body: JSON.stringify({ email, password }),
       });
       const body = await response.json().catch(() => ({})) as { error?: string };
@@ -7154,11 +7366,11 @@ function LoginState({ onSuccess }: { onSuccess: () => void }) {
         <p className="text-sm font-bold uppercase tracking-[0.18em] text-[#ffc83d]">RM Partiu Viagens</p>
         <h1 className="mt-2 text-2xl font-bold">Acessar o CRM</h1>
         <p className="mt-2 text-sm text-[#9fc8ee]">Entre com seu e-mail e senha para acessar os dados da agência.</p>
-        <label className="mt-5 block text-sm font-bold" htmlFor="crm-email">Usuário</label>
+        <label className="mt-5 block text-sm font-bold" htmlFor="crm-email">E-mail ou usuário</label>
         <input
           id="crm-email"
           className="input mt-2"
-          type="email"
+          type="text"
           inputMode="email"
           autoComplete="username"
           value={email}

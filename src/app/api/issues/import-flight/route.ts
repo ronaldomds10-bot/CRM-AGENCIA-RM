@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAuthorized } from "@/lib/auth";
+import { isTrustedMutation, readJsonBody, RequestInputError } from "@/lib/security";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -55,11 +56,14 @@ const flightSchema = {
 };
 
 export async function POST(request: NextRequest) {
+  if (!isTrustedMutation(request)) return NextResponse.json({ error: "Requisição não permitida." }, { status: 403 });
   if (!await isAuthorized(request)) return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
   const apiKey = process.env.THUNDERBIT_API_KEY;
   if (!apiKey) return NextResponse.json({ error: "A integração Thunderbit ainda não foi configurada." }, { status: 503 });
 
-  const body = await request.json().catch(() => null) as { locator?: string; surname?: string; airline?: string; departureAirport?: string } | null;
+  let body: { locator?: string; surname?: string; airline?: string; departureAirport?: string } | null;
+  try { body = await readJsonBody(request, 8 * 1024); }
+  catch (error) { return NextResponse.json({ error: error instanceof RequestInputError ? error.message : "Dados inválidos." }, { status: error instanceof RequestInputError ? error.status : 400 }); }
   const airline = body?.airline?.trim().toLocaleLowerCase("pt-BR") ?? "";
   const reservationPage = airlineReservationPages[airline];
   if (!body?.locator?.trim() || !body?.departureAirport?.trim()) {

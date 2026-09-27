@@ -3,6 +3,7 @@ import pdfParse from "pdf-parse";
 import { isAuthorized } from "@/lib/auth";
 import { allowRequest } from "@/lib/rate-limit";
 import { parseSmilesDocument, returnFlightIndex } from "@/lib/travel-document";
+import { isTrustedMutation, readJsonBody, RequestInputError } from "@/lib/security";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -514,12 +515,15 @@ async function importUrl(rawUrl: string) {
 }
 
 export async function POST(request: NextRequest) {
+  if (!isTrustedMutation(request)) return NextResponse.json({ error: "Requisição não permitida." }, { status: 403 });
   if (!await isAuthorized(request)) return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
   const identity = request.headers.get("x-forwarded-for")?.split(",")[0] || "quote-import";
   if (!allowRequest(`quote-import:${identity}`, 8, 60_000)) return NextResponse.json({ error: "Muitas importações. Aguarde um instante." }, { status: 429 });
   try {
     const contentType = request.headers.get("content-type") || "";
     if (contentType.includes("multipart/form-data")) {
+      const declaredSize = Number(request.headers.get("content-length") ?? 0);
+      if (Number.isFinite(declaredSize) && declaredSize > 4.5 * 1024 * 1024) return NextResponse.json({ error: "Conteúdo muito grande." }, { status: 413 });
       const form = await request.formData();
       const file = form.get("file");
       if (!(file instanceof File) || file.type !== "application/pdf") return NextResponse.json({ error: "Selecione um arquivo PDF." }, { status: 400 });
@@ -531,11 +535,23 @@ export async function POST(request: NextRequest) {
       if (!result.text.trim()) return NextResponse.json({ error: "O PDF não contém texto legível." }, { status: 422 });
       return NextResponse.json({ data: mapPdfText(result.text), source: "pdf" });
     }
-    const body = await request.json().catch(() => null) as { url?: string } | null;
-    if (!body?.url?.trim()) return NextResponse.json({ error: "Informe a URL do orçamento." }, { status: 400 });
+    const body = await readJsonBody<{ url?: string; text?: string }>(request, 96 * 1024);
+    if (body?.text?.trim()) {
+      const ocrText = body.text.trim();
+      if (ocrText.length > 64 * 1024) return NextResponse.json({ error: "Texto do print muito grande." }, { status: 413 });
+      const data = mapPdfText(ocrText);
+      const fields = record(data);
+      const meaningful = Boolean(text(fields.client) || text(fields.destination) || number(fields.cashPrice) || Object.keys(record(fields.flightOut)).length || Object.keys(record(fields.hotel)).length || Object.keys(record(fields.car)).length || Object.keys(record(fields.insurance)).length || array(fields.tours).length);
+      if (!meaningful) return NextResponse.json({ error: "Não encontrei campos de viagem reconhecíveis no print." }, { status: 422 });
+      return NextResponse.json({ data, source: "ocr" });
+    }
+    if (!body?.url?.trim()) return NextResponse.json({ error: "Informe a URL ou o texto do orçamento." }, { status: 400 });
     return NextResponse.json({ data: await importUrl(body.url.trim()), source: "url" });
   } catch (error) {
+    if (error instanceof RequestInputError) return NextResponse.json({ error: error.message }, { status: error.status });
     const message = error instanceof Error ? error.message : "Falha ao importar orçamento.";
-    return NextResponse.json({ error: message }, { status: /InfoTravel|token|link HTTPS/.test(message) ? 422 : 500 });
+    const expected = /InfoTravel|token|link HTTPS|PDF não contém texto/.test(message);
+    if (!expected) console.error("Falha ao importar orçamento:", error);
+    return NextResponse.json({ error: expected ? message : "Falha ao importar orçamento." }, { status: expected ? 422 : 500 });
   }
 }

@@ -28,3 +28,24 @@ test("mantém compatibilidade com IATA antes do horário e data numérica", () =
     expect.objectContaining({ code: "LA3000", from: "CGH", to: "BSB", date: "2026-11-10" }),
   ]);
 });
+
+test("lê print da Azul com rota textual e horário usando h", () => {
+  const text = `
+    Voo de partida
+    De São Paulo (CGH) para Brasília (BSB)
+    qui., 15 de out. · 21h35 - qui., 15 de out. · 23h25
+    Direto · 1 h 50 min · Econômica
+    Azul Linhas Aéreas Brasileiras · AD6008
+    Janine de Sales José
+    Assentos
+    Voo de volta
+    De Brasília (BSB) para São Paulo (CGH)
+    seg., 19 de out. · 15h55 - seg., 19 de out. · 17h40
+    Azul Linhas Aéreas Brasileiras · AD6017
+    Referência da reserva: DLZE9J
+  `;
+  expect(parseFlightPrint(text, new Date("2026-09-23T12:00:00"))).toEqual([
+    expect.objectContaining({ code: "AD6008", airline: "Azul", from: "CGH", to: "BSB", departTime: "21:35", arriveTime: "23:25", date: "2026-10-15", locator: "DLZE9J", passengerNames: ["JANINE DE SALES JOSE"] }),
+    expect.objectContaining({ code: "AD6017", airline: "Azul", from: "BSB", to: "CGH", departTime: "15:55", arriveTime: "17:40", date: "2026-10-19", locator: "DLZE9J" }),
+  ]);
+});

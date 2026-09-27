@@ -2,18 +2,21 @@ import { NextRequest, NextResponse } from "next/server";
 import { isAuthorized } from "@/lib/auth";
 import { allowRequest } from "@/lib/rate-limit";
 import { fetchGooglePlaces, PLACES_NOT_CONFIGURED } from "@/lib/google-places";
+import { isTrustedMutation, readJsonBody, RequestInputError } from "@/lib/security";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const headers = { "Cache-Control": "no-store, max-age=0" };
 
 export async function POST(request: NextRequest) {
+  if (!isTrustedMutation(request)) return NextResponse.json({ error: "Requisição não permitida." }, { status: 403, headers });
   if (!await isAuthorized(request)) return NextResponse.json({ error: "Não autorizado." }, { status: 401, headers });
   const identity = request.headers.get("x-vercel-forwarded-for") || request.headers.get("x-forwarded-for")?.split(",")[0] || "local";
   if (!allowRequest(identity.trim())) return NextResponse.json({ error: "Muitas pesquisas. Aguarde um instante." }, { status: 429, headers });
 
   let query = "";
-  try { query = String((await request.json())?.query ?? "").trim(); } catch { /* resposta controlada abaixo */ }
+  try { query = String((await readJsonBody<{ query?: string }>(request, 4 * 1024))?.query ?? "").trim(); }
+  catch (error) { return NextResponse.json({ error: error instanceof RequestInputError ? error.message : "Dados inválidos." }, { status: error instanceof RequestInputError ? error.status : 400, headers }); }
   if (query.length < 3 || query.length > 120) return NextResponse.json({ error: "Informe ao menos 3 caracteres para pesquisar." }, { status: 400, headers });
 
   try {

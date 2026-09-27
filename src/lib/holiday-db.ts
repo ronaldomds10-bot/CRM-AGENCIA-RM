@@ -5,9 +5,8 @@ import { canAccessRecord, type StatePayload } from "@/lib/access";
 import type { AuthUser } from "@/lib/auth";
 import municipalities from "@/data/municipalities.json";
 import holidays2026 from "@/data/holidays-2026.json";
-import { commercialPriority, normalizeLocation, opportunityFor, projectHolidays2027, type HolidaySeed, type HolidayType } from "@/lib/holidays";
+import { commercialPriority, normalizeHolidayType, normalizeLocation, opportunityFor, projectHolidays2027, type HolidaySeed, type HolidayType } from "@/lib/holidays";
 
-const STATE_ID = "primary";
 const source2026: HolidaySeed[] = holidays2026.map((item) => ({
   ...item,
   type: item.type as HolidayType,
@@ -33,6 +32,15 @@ export async function ensureHolidaySchema() {
     CREATE UNIQUE INDEX IF NOT EXISTS holidays_natural_key_idx ON holidays (date, lower(name), type, COALESCE(state, ''), COALESCE(ibge_code, ''));
     CREATE INDEX IF NOT EXISTS holidays_date_idx ON holidays (date) WHERE is_active;
     CREATE INDEX IF NOT EXISTS holidays_location_idx ON holidays (year, state, ibge_code) WHERE is_active;
+    DO $$ BEGIN
+      IF EXISTS (SELECT 1 FROM holidays WHERE type <> UPPER(TRIM(type)) OR UPPER(TRIM(type)) IN ('MUNICIPIO','CITY','LOCAL','ESTADUAL','NACIONAL','FACULTATIVO')) THEN
+        DROP INDEX IF EXISTS holidays_natural_key_idx;
+        UPDATE holidays SET type=CASE UPPER(TRIM(type)) WHEN 'MUNICIPAL' THEN 'MUNICIPAL' WHEN 'MUNICIPIO' THEN 'MUNICIPAL' WHEN 'CITY' THEN 'MUNICIPAL' WHEN 'LOCAL' THEN 'MUNICIPAL' WHEN 'ESTADUAL' THEN 'STATE' WHEN 'STATE' THEN 'STATE' WHEN 'NACIONAL' THEN 'NATIONAL' WHEN 'NATIONAL' THEN 'NATIONAL' WHEN 'FACULTATIVO' THEN 'OPTIONAL' WHEN 'OPTIONAL' THEN 'OPTIONAL' ELSE UPPER(TRIM(type)) END;
+        DELETE FROM holidays a USING holidays b WHERE a.id>b.id AND a.date=b.date AND LOWER(a.name)=LOWER(b.name) AND a.type=b.type AND COALESCE(a.state,'')=COALESCE(b.state,'') AND COALESCE(a.ibge_code,'')=COALESCE(b.ibge_code,'');
+        CREATE UNIQUE INDEX holidays_natural_key_idx ON holidays (date, lower(name), type, COALESCE(state, ''), COALESCE(ibge_code, ''));
+      END IF;
+    END $$;
+    DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='holidays_type_canonical_check') THEN ALTER TABLE holidays ADD CONSTRAINT holidays_type_canonical_check CHECK (type IN ('NATIONAL','STATE','MUNICIPAL','OPTIONAL')); END IF; END $$;
   `);
 }
 
@@ -91,8 +99,8 @@ export async function assignClientIbgeCodes(payload: StatePayload) {
   return payload;
 }
 
-export async function backfillClientIbgeCodes() {
-  const result = await getPool().query("SELECT payload FROM crm_state WHERE id=$1", [STATE_ID]);
+export async function backfillClientIbgeCodes(user: AuthUser) {
+  const result = await getPool().query("SELECT payload FROM crm_state WHERE agency_id=$1", [user.dataAgencyId]);
   if (!result.rows[0]) return { associated: 0, cities: 0 };
   const payload = result.rows[0].payload as StatePayload;
   const clients = Array.isArray(payload.clients) ? payload.clients : [];
@@ -103,7 +111,7 @@ export async function backfillClientIbgeCodes() {
   }
   await assignClientIbgeCodes(payload);
   changed = before !== JSON.stringify(clients);
-  if (changed) await getPool().query("UPDATE crm_state SET payload=$2::jsonb, updated_at=NOW() WHERE id=$1", [STATE_ID, JSON.stringify(payload)]);
+  if (changed) await getPool().query("UPDATE crm_state SET payload=$2::jsonb,updated_at=NOW() WHERE agency_id=$1", [user.dataAgencyId, JSON.stringify(payload)]);
   const associated = clients.filter((client) => client.ibgeCode).length;
   return { associated, cities: new Set(clients.filter((client) => client.ibgeCode).map((client) => client.ibgeCode)).size };
 }
@@ -117,13 +125,13 @@ async function checkRemote2027() {
   return statuses.every((status) => status === 404 || status === 0) ? "Fonte 2027 ainda não publicada." : "Fonte 2027 detectada; projeções preservadas até importação validada.";
 }
 
-export async function syncHolidayData(checkSource = false) {
+export async function syncHolidayData(checkSource = false, user?: AuthUser) {
   await ensureHolidaySchema();
   await insertMunicipalities();
   await insertHolidays(source2026);
   await insertHolidays(projectHolidays2027(source2026));
-  const clients = await backfillClientIbgeCodes();
-  return { ...(await holidayStats()), clients, message: checkSource ? await checkRemote2027() : "Base local atualizada." };
+  const clients = user ? await backfillClientIbgeCodes(user) : { associated: 0, cities: 0 };
+  return { ...(await holidayStats(user)), clients, message: checkSource ? await checkRemote2027() : "Base local atualizada." };
 }
 
 export async function ensureHolidayData() {
@@ -132,25 +140,34 @@ export async function ensureHolidayData() {
   if (!result.rows[0].count) await syncHolidayData(false);
 }
 
-export async function holidayStats() {
+export async function holidayStats(user?: AuthUser) {
   await ensureHolidaySchema();
   const counts = await getPool().query(`SELECT year, verification_status, COUNT(*)::int AS count FROM holidays WHERE is_active GROUP BY year, verification_status`);
   const locations = await getPool().query("SELECT COUNT(*)::int AS count FROM municipalities");
-  const clientResult = await getPool().query("SELECT payload FROM crm_state WHERE id=$1", [STATE_ID]);
-  const clients = (clientResult.rows[0]?.payload?.clients || []) as Array<Record<string, unknown>>;
+  const typeCounts = await getPool().query("SELECT type, COUNT(*)::int AS count FROM holidays WHERE is_active GROUP BY type ORDER BY type");
+  const municipal = await getPool().query("SELECT COUNT(DISTINCT ibge_code)::int AS cities, COUNT(*) FILTER (WHERE city IS NULL OR state IS NULL OR ibge_code IS NULL OR year IS NULL OR date IS NULL OR name IS NULL)::int AS incomplete FROM holidays WHERE is_active AND type='MUNICIPAL'");
+  const clientResult = user ? await getPool().query("SELECT payload FROM crm_state WHERE agency_id=$1", [user.dataAgencyId]) : { rows: [] };
+  const allClients = (clientResult.rows[0]?.payload?.clients || []) as Array<Record<string, unknown> & { id: string; ownerId?: string; assignedUserId?: string | null }>;
+  const clients = user ? allClients.filter((client) => canAccessRecord(client, user)) : allClients;
   return {
     counts: counts.rows,
+    typeCounts: typeCounts.rows,
+    years: [...new Set(counts.rows.map((row) => Number(row.year)))].sort(),
+    municipalCities: municipal.rows[0].cities,
+    incompleteMunicipal: municipal.rows[0].incomplete,
     municipalities: locations.rows[0].count,
     clientsWithIbge: clients.filter((client) => client.ibgeCode).length,
     distinctClientCities: new Set(clients.filter((client) => client.ibgeCode).map((client) => client.ibgeCode)).size,
   };
 }
 
-type DbHoliday = { id: string; name: string; date: string; type: HolidayType; state: string | null; ibge_code: string | null; city: string | null; verification_status: string; projection_method: string | null };
+type DbHoliday = { id: string; name: string; date: string; year: number; type: HolidayType; state: string | null; ibge_code: string | null; city: string | null; verification_status: string; projection_method: string | null };
 
-export async function listHolidayOpportunities(user: AuthUser) {
+export type HolidayFilters = { type?: string; state?: string; city?: string; ibgeCode?: string; year?: string; verification?: string };
+
+export async function listHolidayOpportunities(user: AuthUser, filters: HolidayFilters = {}) {
   await ensureHolidayData();
-  const stateResult = await getPool().query("SELECT payload FROM crm_state WHERE id=$1", [STATE_ID]);
+  const stateResult = await getPool().query("SELECT payload FROM crm_state WHERE agency_id=$1", [user.dataAgencyId]);
   const payload = (stateResult.rows[0]?.payload || { clients: [] }) as StatePayload;
   const clients = (payload.clients || []).filter((client) => canAccessRecord(client, user));
   const byIbge = new Map<string, number>(); const byState = new Map<string, number>();
@@ -159,24 +176,58 @@ export async function listHolidayOpportunities(user: AuthUser) {
     if (ibge) byIbge.set(ibge, (byIbge.get(ibge) || 0) + 1);
     if (state) byState.set(state, (byState.get(state) || 0) + 1);
   }
-  const today = new Date().toISOString().slice(0, 10);
-  const rows = await getPool().query(`SELECT id,name,to_char(date,'YYYY-MM-DD') AS date,type,state,ibge_code,city,verification_status,projection_method FROM holidays WHERE is_active AND date >= $1 AND date <= '2027-12-31' ORDER BY date,name`, [today]);
-  const opportunities = (rows.rows as DbHoliday[]).flatMap((holiday) => {
-    const opportunity = opportunityFor(holiday.date); if (!opportunity) return [];
+  let selectedLocation: { ibge_code: string; city: string; state: string } | undefined;
+  if (filters.ibgeCode) {
+    const locationValues = [filters.ibgeCode]; const locationClauses = ["ibge_code=$1"];
+    if (filters.state) { locationValues.push(filters.state.toUpperCase()); locationClauses.push(`state=$${locationValues.length}`); }
+    if (filters.city) { locationValues.push(normalizeLocation(filters.city)); locationClauses.push(`normalized_city=$${locationValues.length}`); }
+    const found = await getPool().query(`SELECT ibge_code,city,state FROM municipalities WHERE ${locationClauses.join(" AND ")}`, locationValues);
+    selectedLocation = found.rows[0];
+  } else if (filters.city) {
+    const values = filters.state
+      ? [normalizeLocation(filters.city), filters.state.toUpperCase()]
+      : [normalizeLocation(filters.city)];
+    const found = await getPool().query(`SELECT ibge_code,city,state FROM municipalities WHERE normalized_city=$1${filters.state ? " AND state=$2" : ""}`, values);
+    if (found.rowCount === 1) selectedLocation = found.rows[0];
+  }
+  const clauses = ["is_active", "year IN (2026,2027)"]; const values: unknown[] = [];
+  const add = (sql: string, value: unknown) => { values.push(value); clauses.push(sql.replace("?", `$${values.length}`)); };
+  if (["NATIONAL", "STATE", "MUNICIPAL", "OPTIONAL"].includes(filters.type || "")) add("type=?", filters.type);
+  if (["CONFIRMED", "PROJECTED", "MANUAL"].includes(filters.verification || "")) add("verification_status=?", filters.verification);
+  if (["2026", "2027"].includes(filters.year || "")) add("year=?", Number(filters.year));
+  if (selectedLocation) {
+    values.push(selectedLocation.state, selectedLocation.ibge_code);
+    clauses.push(`(type='NATIONAL' OR (type='STATE' AND state=$${values.length - 1}) OR (type='MUNICIPAL' AND state=$${values.length - 1} AND ibge_code=$${values.length}) OR (type='OPTIONAL' AND ((state IS NULL AND ibge_code IS NULL) OR state=$${values.length - 1} OR ibge_code=$${values.length})))`);
+  } else if (filters.state) {
+    values.push(filters.state.toUpperCase());
+    clauses.push(`(type='NATIONAL' OR ((type='STATE' OR type='MUNICIPAL') AND state=$${values.length}) OR (type='OPTIONAL' AND (state IS NULL OR state=$${values.length})))`);
+  }
+  if ((filters.city || filters.ibgeCode) && !selectedLocation) clauses.push("FALSE");
+  const selectFields = "id,name,to_char(date,'YYYY-MM-DD') AS date,year,type,state,ibge_code,city,verification_status,projection_method";
+  const rows = await getPool().query(`SELECT ${selectFields} FROM holidays WHERE ${clauses.join(" AND ")} ORDER BY date,name LIMIT 751`, values);
+  const enrich = (holiday: DbHoliday) => {
+    const opportunity = opportunityFor(holiday.date);
     const clientCount = holiday.type === "MUNICIPAL" || (holiday.type === "OPTIONAL" && holiday.ibge_code)
       ? byIbge.get(holiday.ibge_code || "") || 0
       : holiday.type === "STATE" || (holiday.type === "OPTIONAL" && holiday.state)
         ? byState.get(holiday.state || "") || 0
         : clients.length;
-    if ((holiday.type === "MUNICIPAL" || holiday.type === "STATE" || (holiday.type === "OPTIONAL" && (holiday.state || holiday.ibge_code))) && !clientCount) return [];
-    const daysUntil = Math.max(0, Math.ceil((new Date(`${holiday.date}T12:00:00Z`).getTime() - Date.now()) / 86400000));
-    return [{ ...holiday, ibgeCode: holiday.ibge_code, verificationStatus: holiday.verification_status, projectionMethod: holiday.projection_method, ...opportunity, clientCount, daysUntil, priority: commercialPriority(daysUntil) }];
-  });
-  return { opportunities, impactedClients: new Set(clients.filter((client) => client.ibgeCode || client.state).map((client) => client.id)).size, stats: await holidayStats() };
+    const daysUntil = Math.ceil((new Date(`${holiday.date}T12:00:00Z`).getTime() - Date.now()) / 86400000);
+    return { ...holiday, ibgeCode: holiday.ibge_code, verificationStatus: holiday.verification_status, projectionMethod: holiday.projection_method, opportunity, clientCount, daysUntil, priority: opportunity && daysUntil >= 0 ? commercialPriority(daysUntil) : "—" };
+  };
+  const normalizedHolidays = (rows.rows as DbHoliday[]).slice(0, 750).map(enrich);
+  let opportunityCandidates = normalizedHolidays;
+  if (!Object.values(filters).some(Boolean)) {
+    const today = new Date().toISOString().slice(0, 10);
+    const future = await getPool().query(`SELECT ${selectFields} FROM holidays WHERE is_active AND date >= $1 AND date <= '2027-12-31'`, [today]);
+    opportunityCandidates = (future.rows as DbHoliday[]).map(enrich);
+  }
+  const opportunities = opportunityCandidates.filter((holiday) => holiday.opportunity && (holiday.type === "NATIONAL" || (holiday.type === "OPTIONAL" && !holiday.state && !holiday.ibgeCode) || holiday.clientCount > 0)).map((holiday) => ({ ...holiday, ...holiday.opportunity }));
+  return { holidays: normalizedHolidays, opportunities, truncated: (rows.rowCount || 0) > 750, selectedLocation, locationError: (filters.city || filters.ibgeCode) && !selectedLocation ? "Cidade ou código IBGE não encontrado. Informe cidade e UF corretas." : "", impactedClients: new Set(clients.filter((client) => client.ibgeCode || client.state).map((client) => client.id)).size, stats: await holidayStats(user) };
 }
 
 export async function clientsForHoliday(user: AuthUser, type: HolidayType, state?: string, ibgeCode?: string) {
-  const result = await getPool().query("SELECT payload FROM crm_state WHERE id=$1", [STATE_ID]);
+  const result = await getPool().query("SELECT payload FROM crm_state WHERE agency_id=$1", [user.dataAgencyId]);
   const payload = (result.rows[0]?.payload || { clients: [] }) as StatePayload;
   const seen = new Set<string>();
   return (payload.clients || []).filter((client) => canAccessRecord(client, user)).filter((client) => {
@@ -197,7 +248,8 @@ export async function saveManualHoliday(input: Record<string, unknown>) {
     await getPool().query(`UPDATE holidays SET name=COALESCE($2,name), date=COALESCE($3::date,date), year=EXTRACT(YEAR FROM COALESCE($3::date,date)), verification_status=COALESCE($4,verification_status), is_active=COALESCE($5,is_active), updated_at=NOW() WHERE id=$1`, [id, input.name || null, input.date || null, input.verificationStatus || null, typeof input.isActive === "boolean" ? input.isActive : null]);
     return;
   }
-  const type = String(input.type || "NATIONAL") as HolidayType;
+  const type = normalizeHolidayType(String(input.type || "NATIONAL"));
+  if (!type) throw new Error("Tipo de feriado inválido.");
   const state = String(input.state || "").toUpperCase() || null;
   let ibgeCode = String(input.ibgeCode || "") || null; let city = String(input.city || "") || null;
   if (type === "MUNICIPAL" && city && state && !ibgeCode) {
