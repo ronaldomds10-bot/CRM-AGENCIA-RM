@@ -7203,6 +7203,7 @@ function UsersAdmin({ currentUser, onAssignment }: { currentUser: CurrentUser; o
   const [users, setUsers] = useState<ManagedUser[]>([]);
   const [records, setRecords] = useState<Assignment[]>([]);
   const [agencies, setAgencies] = useState<Agency[]>([]);
+  const [editingUser, setEditingUser] = useState<ManagedUser | null>(null);
   const [form, setForm] = useState({ name: "", email: "", password: "", role: "agency_user" as UserRole, agencyId: currentUser.agencyId || "" });
   const [agencyForm, setAgencyForm] = useState({ name: "", adminName: "", adminEmail: "", adminPassword: "" });
   const [error, setError] = useState("");
@@ -7234,19 +7235,22 @@ function UsersAdmin({ currentUser, onAssignment }: { currentUser: CurrentUser; o
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Falha ao criar usuário."); }
     finally { setBusy(false); }
   };
-  const edit = async (user: ManagedUser) => {
-    const name = prompt("Nome", user.name);
-    if (name === null) return;
-    const email = prompt("E-mail", user.email);
-    if (email === null) return;
-    const password = prompt("Nova senha (deixe vazio para manter)", "");
-    if (password === null) return;
-    const role = user.id === "admin" ? "super_admin" : (prompt("Perfil: agency_admin ou agency_user", user.role) || user.role);
-    const body = { name, email, role, ...(password ? { password } : {}) };
-    const response = await fetch(`/api/admin/users/${encodeURIComponent(user.id)}`, { method: "PATCH", headers: JSON_MUTATION_HEADERS, body: JSON.stringify(body) });
+  const saveUser = async () => {
+    if (!editingUser) return;
+    const original = users.find((user) => user.id === editingUser.id);
+    const body = {
+      name: editingUser.name,
+      email: editingUser.email,
+      role: editingUser.role,
+      active: editingUser.active,
+      ...(currentUser.role === "super_admin" && original?.agency_id !== editingUser.agency_id
+        ? { agencyId: editingUser.agency_id || "" }
+        : {}),
+    };
+    const response = await fetch(`/api/admin/users/${encodeURIComponent(editingUser.id)}`, { method: "PATCH", headers: JSON_MUTATION_HEADERS, body: JSON.stringify(body) });
     const result = await response.json() as { error?: string };
     if (!response.ok) { setError(result.error || "Não foi possível editar usuário."); return; }
-    setError(""); await load();
+    setError(""); setEditingUser(null); await load();
   };
   const changePassword = async (user: ManagedUser) => {
     const passwordInput = prompt(`Nova senha para ${user.name} (mín. 12 caracteres)`, "");
@@ -7331,7 +7335,18 @@ function UsersAdmin({ currentUser, onAssignment }: { currentUser: CurrentUser; o
       {currentUser.role === "super_admin" ? <select className="input" aria-label="Agência" value={form.agencyId} onChange={(event) => setForm({ ...form, agencyId: event.target.value })} required><option value="">Agência</option>{agencies.filter((agency) => agency.active).map((agency) => <option key={agency.id} value={agency.id}>{agency.name}</option>)}</select> : null}
       <button className="gold-button" type="submit" disabled={busy}>Criar usuário</button>
     </form>
-    <div className="table-wrap"><table><thead><tr><th>Nome</th><th>E-mail</th>{currentUser.role === "super_admin" ? <th>Agência</th> : null}<th>Perfil</th><th>Status</th><th>Ações</th></tr></thead><tbody>{users.map((user) => <tr key={user.id}><td>{user.name}</td><td>{user.email}</td>{currentUser.role === "super_admin" ? <td>{user.agency_name || "Global"}</td> : null}<td>{roleLabel(user.role)}</td><td>{user.active ? "Ativo" : "Inativo"}</td><td><button className="dark-mini" type="button" onClick={() => void edit(user)}>Editar</button>{user.id !== "admin" ? <button className="dark-mini ml-2" type="button" onClick={() => void changeEmail(user)}>Alterar e-mail</button> : null}<button className="dark-mini ml-2" type="button" onClick={() => void changePassword(user)}>Alterar senha</button>{user.id !== "admin" && user.id !== currentUser.id ? <><button className="dark-mini ml-2" type="button" onClick={() => void toggle(user)}>{user.active ? "Desativar" : "Ativar"}</button><button className="danger-mini ml-2" type="button" onClick={() => void remove(user)}>Excluir</button></> : null}</td></tr>)}</tbody></table></div>
+    <div className="table-wrap"><table><thead><tr><th>Nome</th><th>E-mail</th>{currentUser.role === "super_admin" ? <th>Agência</th> : null}<th>Perfil</th><th>Status</th><th>Ações</th></tr></thead><tbody>{users.map((user) => {
+      const draft = editingUser?.id === user.id ? editingUser : null;
+      const updateDraft = (changes: Partial<ManagedUser>) => setEditingUser((current) => current?.id === user.id ? { ...current, ...changes } : current);
+      return <tr key={user.id}>
+        <td>{draft ? <input className="input min-w-36" aria-label={`Nome de ${user.name}`} value={draft.name} onChange={(event) => updateDraft({ name: event.target.value })} /> : user.name}</td>
+        <td>{draft ? <input className="input min-w-48" type="email" aria-label={`E-mail de ${user.name}`} value={draft.email} onChange={(event) => updateDraft({ email: event.target.value })} /> : user.email}</td>
+        {currentUser.role === "super_admin" ? <td>{draft ? <select className="input min-w-40" aria-label={`Agência de ${user.name}`} value={draft.agency_id || ""} disabled={draft.role === "super_admin"} onChange={(event) => updateDraft({ agency_id: event.target.value || null })}><option value="">Global</option>{agencies.map((agency) => <option key={agency.id} value={agency.id} disabled={!agency.active}>{agency.name}{agency.active ? "" : " (inativa)"}</option>)}</select> : user.agency_name || "Global"}</td> : null}
+        <td>{draft ? <select className="input min-w-32" aria-label={`Perfil de ${user.name}`} value={draft.role} disabled={user.id === currentUser.id} onChange={(event) => { const role = event.target.value as UserRole; updateDraft({ role, ...(role === "super_admin" ? { agency_id: null } : !draft.agency_id ? { agency_id: agencies.find((agency) => agency.active)?.id || null } : {}) }); }}><option value="agency_user">Usuário</option><option value="agency_admin">Administrador</option>{currentUser.role === "super_admin" ? <option value="super_admin">Superadmin</option> : null}</select> : roleLabel(user.role)}</td>
+        <td>{draft ? <select className="input min-w-24" aria-label={`Status de ${user.name}`} value={draft.active ? "active" : "inactive"} disabled={user.id === currentUser.id || user.id === "admin"} onChange={(event) => updateDraft({ active: event.target.value === "active" })}><option value="active">Ativo</option><option value="inactive">Inativo</option></select> : user.active ? "Ativo" : "Inativo"}</td>
+        <td>{draft ? <><button className="gold-button" type="button" onClick={() => void saveUser()}>Salvar</button><button className="dark-mini ml-2" type="button" onClick={() => setEditingUser(null)}>Cancelar</button></> : <><button className="dark-mini" type="button" onClick={() => { setError(""); setEditingUser({ ...user }); }}>Editar</button>{user.id !== "admin" ? <button className="dark-mini ml-2" type="button" onClick={() => void changeEmail(user)}>Alterar e-mail</button> : null}<button className="dark-mini ml-2" type="button" onClick={() => void changePassword(user)}>Alterar senha</button>{user.id !== "admin" && user.id !== currentUser.id ? <><button className="dark-mini ml-2" type="button" onClick={() => void toggle(user)}>{user.active ? "Desativar" : "Ativar"}</button><button className="danger-mini ml-2" type="button" onClick={() => void remove(user)}>Excluir</button></> : null}</>}</td>
+      </tr>;
+    })}</tbody></table></div>
     <section className="grid gap-3"><h2 className="text-xl font-bold">Atribuir registros</h2><div className="table-wrap"><table><thead><tr><th>Tipo</th><th>Registro</th><th>Responsável</th></tr></thead><tbody>{records.map((record) => <tr key={`${record.key}-${record.id}`}><td>{{ quotes: "Orçamento/Emissão", clients: "Cliente", suppliers: "Fornecedor", events: "Evento" }[record.key]}</td><td>{record.label}</td><td><select className="input" aria-label={`Atribuir ${record.label}`} value={record.assignedUserId} onChange={(event) => void assign(record, event.target.value)}><option value="">Sem atribuição</option>{users.filter((user) => user.role === "agency_user" && user.active && user.agency_id === currentUser.dataAgencyId).map((user) => <option value={user.id} key={user.id}>{user.name}</option>)}</select></td></tr>)}</tbody></table></div></section>
   </div>;
 }
