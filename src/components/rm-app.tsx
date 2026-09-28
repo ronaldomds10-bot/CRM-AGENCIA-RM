@@ -2034,7 +2034,6 @@ export function RMApp() {
   }
   function createQuote() {
     const quote = blankQuote();
-    setData((cur) => ({ ...cur, quotes: [quote, ...cur.quotes] }));
     setEditing(quote);
     setQuoteTab("trip");
     setView("quotes");
