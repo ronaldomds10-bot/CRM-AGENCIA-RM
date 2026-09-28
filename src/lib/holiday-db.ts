@@ -16,7 +16,19 @@ const source2026: HolidaySeed[] = holidays2026.map((item) => ({
   projectionMethod: null,
 }));
 
-export async function ensureHolidaySchema() {
+let holidaySchemaReady: Promise<void> | null = null;
+
+export function ensureHolidaySchema() {
+  if (!holidaySchemaReady) {
+    holidaySchemaReady = createHolidaySchema().catch((error) => {
+      holidaySchemaReady = null;
+      throw error;
+    });
+  }
+  return holidaySchemaReady;
+}
+
+async function createHolidaySchema() {
   await getPool().query(`
     CREATE TABLE IF NOT EXISTS municipalities (ibge_code TEXT PRIMARY KEY, city TEXT NOT NULL, state CHAR(2) NOT NULL, normalized_city TEXT NOT NULL, UNIQUE (normalized_city, state));
     CREATE TABLE IF NOT EXISTS holidays (
@@ -142,11 +154,13 @@ export async function ensureHolidayData() {
 
 export async function holidayStats(user?: AuthUser) {
   await ensureHolidaySchema();
-  const counts = await getPool().query(`SELECT year, verification_status, COUNT(*)::int AS count FROM holidays WHERE is_active GROUP BY year, verification_status`);
-  const locations = await getPool().query("SELECT COUNT(*)::int AS count FROM municipalities");
-  const typeCounts = await getPool().query("SELECT type, COUNT(*)::int AS count FROM holidays WHERE is_active GROUP BY type ORDER BY type");
-  const municipal = await getPool().query("SELECT COUNT(DISTINCT ibge_code)::int AS cities, COUNT(*) FILTER (WHERE city IS NULL OR state IS NULL OR ibge_code IS NULL OR year IS NULL OR date IS NULL OR name IS NULL)::int AS incomplete FROM holidays WHERE is_active AND type='MUNICIPAL'");
-  const clientResult = user ? await getPool().query("SELECT payload FROM crm_state WHERE agency_id=$1", [user.dataAgencyId]) : { rows: [] };
+  const [counts, locations, typeCounts, municipal, clientResult] = await Promise.all([
+    getPool().query(`SELECT year, verification_status, COUNT(*)::int AS count FROM holidays WHERE is_active GROUP BY year, verification_status`),
+    getPool().query("SELECT COUNT(*)::int AS count FROM municipalities"),
+    getPool().query("SELECT type, COUNT(*)::int AS count FROM holidays WHERE is_active GROUP BY type ORDER BY type"),
+    getPool().query("SELECT COUNT(DISTINCT ibge_code)::int AS cities, COUNT(*) FILTER (WHERE city IS NULL OR state IS NULL OR ibge_code IS NULL OR year IS NULL OR date IS NULL OR name IS NULL)::int AS incomplete FROM holidays WHERE is_active AND type='MUNICIPAL'"),
+    user ? getPool().query("SELECT payload FROM crm_state WHERE agency_id=$1", [user.dataAgencyId]) : Promise.resolve({ rows: [] }),
+  ]);
   const allClients = (clientResult.rows[0]?.payload?.clients || []) as Array<Record<string, unknown> & { id: string; ownerId?: string; assignedUserId?: string | null }>;
   const clients = user ? allClients.filter((client) => canAccessRecord(client, user)) : allClients;
   return {
@@ -204,7 +218,12 @@ export async function listHolidayOpportunities(user: AuthUser, filters: HolidayF
   }
   if ((filters.city || filters.ibgeCode) && !selectedLocation) clauses.push("FALSE");
   const selectFields = "id,name,to_char(date,'YYYY-MM-DD') AS date,year,type,state,ibge_code,city,verification_status,projection_method";
-  const rows = await getPool().query(`SELECT ${selectFields} FROM holidays WHERE ${clauses.join(" AND ")} ORDER BY date,name LIMIT 751`, values);
+  const [rows, future] = await Promise.all([
+    getPool().query(`SELECT ${selectFields} FROM holidays WHERE ${clauses.join(" AND ")} ORDER BY date,name LIMIT 751`, values),
+    !Object.values(filters).some(Boolean)
+      ? getPool().query(`SELECT ${selectFields} FROM holidays WHERE is_active AND date >= $1 AND date <= '2027-12-31'`, [new Date().toISOString().slice(0, 10)])
+      : Promise.resolve(null),
+  ]);
   const enrich = (holiday: DbHoliday) => {
     const opportunity = opportunityFor(holiday.date);
     const clientCount = holiday.type === "MUNICIPAL" || (holiday.type === "OPTIONAL" && holiday.ibge_code)
@@ -217,11 +236,7 @@ export async function listHolidayOpportunities(user: AuthUser, filters: HolidayF
   };
   const normalizedHolidays = (rows.rows as DbHoliday[]).slice(0, 750).map(enrich);
   let opportunityCandidates = normalizedHolidays;
-  if (!Object.values(filters).some(Boolean)) {
-    const today = new Date().toISOString().slice(0, 10);
-    const future = await getPool().query(`SELECT ${selectFields} FROM holidays WHERE is_active AND date >= $1 AND date <= '2027-12-31'`, [today]);
-    opportunityCandidates = (future.rows as DbHoliday[]).map(enrich);
-  }
+  if (future) opportunityCandidates = (future.rows as DbHoliday[]).map(enrich);
   const opportunities = opportunityCandidates.filter((holiday) => holiday.opportunity && (holiday.type === "NATIONAL" || (holiday.type === "OPTIONAL" && !holiday.state && !holiday.ibgeCode) || holiday.clientCount > 0)).map((holiday) => ({ ...holiday, ...holiday.opportunity }));
   return { holidays: normalizedHolidays, opportunities, truncated: (rows.rowCount || 0) > 750, selectedLocation, locationError: (filters.city || filters.ibgeCode) && !selectedLocation ? "Cidade ou código IBGE não encontrado. Informe cidade e UF corretas." : "", impactedClients: new Set(clients.filter((client) => client.ibgeCode || client.state).map((client) => client.id)).size, stats: await holidayStats(user) };
 }
