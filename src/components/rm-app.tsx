@@ -3177,7 +3177,7 @@ function FlightsForm({
           <button className="dark-mini" type="button" onClick={() => {
             if (!showReturn) setShowReturn(true);
             else onChange({ ...quote, flightBackSegments: [...(quote.flightBackSegments ?? []), inheritFlightBaggage({ ...emptyFlight(), segmentId: uid() }, quote.flightBack, true)] });
-          }}><PlusIcon /> Nova viagem</button>
+          }}><PlusIcon /> {showReturn ? "Adicionar conexão" : "Nova viagem de volta"}</button>
           <button className="dark-mini" type="button" onClick={onImport}><DownloadIcon /> Importar</button>
         </div>
       </div>
