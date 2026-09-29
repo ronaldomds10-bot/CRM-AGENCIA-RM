@@ -3131,7 +3131,7 @@ function SingleDatePicker({ label, value, onChange, manual = false, helper, plac
     <div className={`single-date-field ${manual ? "manual-date-field" : ""} ${open ? "date-open" : ""}`} ref={rootRef}>
       <label>{label}</label>
       {manual ? <div className="manual-date-control">
-        <input className="input" inputMode="numeric" placeholder="DD/MM/AAAA" value={typedDate} onChange={(event) => {
+        <input className="input" inputMode="numeric" placeholder={placeholder} value={typedDate} onChange={(event) => {
           const digits = event.target.value.replace(/\D/g, "").slice(0, 8);
           const masked = digits.length > 4 ? `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}` : digits.length > 2 ? `${digits.slice(0, 2)}/${digits.slice(2)}` : digits;
           setTypedDate(masked);
@@ -3287,14 +3287,18 @@ function FlightSummaryCard({ flight, onChange, label = "Voo", onRemove }: { flig
     return `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, "0")}min`;
   })();
   return <article className="flight-result-card">
-    <div className="flight-result-meta"><span>{label} <input className="flight-result-code" aria-label={`Código do ${label.toLowerCase()}`} placeholder="Código do voo" value={flight.code} onChange={(event) => {
-      const code = event.target.value.toUpperCase();
-      const airline = registeredAirlines.find((item) => code.startsWith(item.code));
-      onChange({ ...flight, code, airline: airline?.name || flight.airline });
-    }} /></span><select className="flight-result-class" aria-label={`Classe do ${label.toLowerCase()}`} value={flight.cabinClass || "Econômica"} onChange={(event) => onChange({ ...flight, cabinClass: event.target.value })}><option>Primeira Classe</option><option>Executiva</option><option>Econômica Premium</option><option>Econômica</option></select><div className="flight-result-brand"><select className="flight-result-airline" aria-label={`Companhia aérea do ${label.toLowerCase()}`} value={flight.airline} onChange={(event) => onChange({ ...flight, airline: event.target.value })}><option value="">Companhia aérea</option>{flight.airline && !flightAirlines.includes(flight.airline) ? <option value={flight.airline}>{flight.airline}</option> : null}{flightAirlines.map((airline) => <option key={airline} value={airline}>{airline}</option>)}</select>{onRemove ? <button type="button" className="flight-card-remove" aria-label={`Remover ${label}`} title="Remover voo" onClick={onRemove}><TrashIcon /></button> : null}</div></div>
+    <div className="flight-result-meta">
+      <label className="flight-result-code-field"><span>{label}</span><input className="flight-result-code" aria-label={`Código do ${label.toLowerCase()}`} placeholder="Código do Voo" value={flight.code} onChange={(event) => {
+        const code = event.target.value.toUpperCase();
+        const airline = registeredAirlines.find((item) => code.startsWith(item.code));
+        onChange({ ...flight, code, airline: airline?.name || flight.airline });
+      }} /></label>
+      <label className="flight-result-class-field"><span>Classe do voo</span><select className="flight-result-class" aria-label={`Classe do ${label.toLowerCase()}`} value={flight.cabinClass || ""} onChange={(event) => onChange({ ...flight, cabinClass: event.target.value })}><option value="">Selecione a classe</option><option>Primeira Classe</option><option>Executiva</option><option>Econômica Premium</option><option>Econômica</option></select></label>
+      {onRemove ? <button type="button" className="flight-card-remove" aria-label={`Remover ${label}`} title="Remover voo" onClick={onRemove}><TrashIcon /></button> : null}
+    </div>
     <div className="flight-result-route">
-      <div className="flight-result-edit-column"><label>Saindo</label><TimeInput value={flight.departTime} onChange={(departTime) => onChange({ ...flight, departTime })} /><div className="flight-result-airport"><PlaneSparkIcon /><AirportInput value={flight.from} onChange={(from) => onChange({ ...flight, from })} /></div><SingleDatePicker manual label="Data de saída" value={flight.date} onChange={(date) => onChange({ ...flight, date })} /></div>
-      <div className="flight-result-edit-column"><label>Chegada {durationLabel ? <em>({durationLabel})</em> : null}</label><TimeInput value={flight.arriveTime} onChange={(arriveTime) => onChange({ ...flight, arriveTime })} /><div className="flight-result-airport"><PlaneSparkIcon /><AirportInput value={flight.to} onChange={(to) => onChange({ ...flight, to })} /></div><SingleDatePicker manual label="Data de chegada" value={flight.arrivalDate || flight.date} onChange={(arrivalDate) => onChange({ ...flight, arrivalDate })} /></div>
+      <div className="flight-result-edit-column"><label>Saindo</label><TimeInput value={flight.departTime} placeholder="—:—" onChange={(departTime) => onChange({ ...flight, departTime })} /><div className="flight-result-airport"><PlaneSparkIcon /><AirportInput value={flight.from} placeholder="Partida" onChange={(from) => onChange({ ...flight, from })} /></div><SingleDatePicker manual label="Data de saída" placeholder="Selecione uma data" value={flight.date} onChange={(date) => onChange({ ...flight, date })} /></div>
+      <div className="flight-result-edit-column"><label>Chegada {durationLabel ? <em>({durationLabel})</em> : null}</label><TimeInput value={flight.arriveTime} placeholder="—:—" onChange={(arriveTime) => onChange({ ...flight, arriveTime })} /><div className="flight-result-airport"><PlaneSparkIcon /><AirportInput value={flight.to} placeholder="Destino" onChange={(to) => onChange({ ...flight, to })} /></div><SingleDatePicker manual label="Data de chegada" placeholder="Selecione uma data" value={flight.arrivalDate || flight.date} onChange={(arrivalDate) => onChange({ ...flight, arrivalDate })} /></div>
     </div>
   </article>;
 }
@@ -6898,9 +6902,11 @@ function ChevronRightIcon() {
 function AirportInput({
   value,
   onChange,
+  placeholder = "Digite IATA, cidade ou aeroporto",
 }: {
   value: string;
   onChange: (value: string) => void;
+  placeholder?: string;
 }) {
   const [airports, setAirports] = useState<Airport[]>(airportCache ?? []);
   const [focused, setFocused] = useState(false);
@@ -6933,7 +6939,7 @@ function AirportInput({
       <input
         className="input"
         autoComplete="off"
-        placeholder="Digite IATA, cidade ou aeroporto"
+        placeholder={placeholder}
         value={value}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
@@ -6984,7 +6990,7 @@ function CurrencyInput({
     />
   );
 }
-function TimeInput({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+function TimeInput({ value, onChange, placeholder = "HH:mm" }: { value: string; onChange: (value: string) => void; placeholder?: string }) {
   const update = (raw: string) => {
     const digits = raw.replace(/\D/g, "").slice(0, 4);
     const formatted = digits.length > 2 ? `${digits.slice(0, 2)}:${digits.slice(2)}` : digits;
@@ -7001,7 +7007,7 @@ function TimeInput({ value, onChange }: { value: string; onChange: (value: strin
         className="input"
         inputMode="numeric"
         maxLength={5}
-        placeholder="HH:mm"
+        placeholder={placeholder}
         title="Horário em formato 24 horas, GMT-3"
         value={value}
         onChange={(event) => update(event.target.value)}
