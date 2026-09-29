@@ -6,6 +6,7 @@ import QRCode from "qrcode";
 import { parseFlightPrint } from "@/lib/flight-print";
 import { parseSmilesDocument, returnFlightIndex } from "@/lib/travel-document";
 import { flightDurationMinutes } from "@/lib/flight-duration";
+import CpfControl from "@/components/cpf-control";
 
 type ViewKey =
   | "dashboard"
@@ -16,6 +17,7 @@ type ViewKey =
   | "finance"
   | "calendar"
   | "suppliers"
+  | "cpf-control"
   | "tutorials"
   | "billing"
   | "settings"
@@ -334,6 +336,7 @@ const nav: Array<{ key: ViewKey; label: string; icon: string }> = [
   { key: "finance", label: "Financeiro", icon: "$" },
   { key: "calendar", label: "Calendário", icon: "□" },
   { key: "suppliers", label: "Fornecedores", icon: "◇" },
+  { key: "cpf-control", label: "Controle de CPFs", icon: "▤" },
   { key: "tutorials", label: "Tutoriais", icon: "▷" },
 ];
 const statusText: Record<Status, string> = {
@@ -2273,6 +2276,7 @@ export function RMApp() {
               }
             />
           ) : null}
+          {view === "cpf-control" ? <CpfControl /> : null}
           {view === "tutorials" ? <Tutorials /> : null}
           {view === "billing" && isManagerRole(currentUser.role) ? <Billing /> : null}
           {view === "users" && isManagerRole(currentUser.role) ? <UsersAdmin currentUser={currentUser} onAssignment={async () => {
