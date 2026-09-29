@@ -3206,10 +3206,10 @@ function CompactFlightBlock({ title, flight, onChange, segments, onSegmentsChang
     <section className="compact-flight-panel">
       <div className="compact-flight-heading">
         <h2><PlaneSparkIcon /> {title}</h2>
-        {onRemove ? <div className="compact-flight-heading-actions">
-          <button type="button" className="flight-trash" onClick={onRemove} aria-label={`Remover ${title}`} title="Remover viagem"><TrashIcon /></button>
+        <div className="compact-flight-heading-actions">
+          <button type="button" className="flight-trash" onClick={onRemove || (() => onChange({ ...emptyFlight(), passengers: flight.passengers }))} aria-label={onRemove ? `Remover ${title}` : `Limpar ${title}`} title={onRemove ? "Remover viagem" : "Limpar viagem"}><TrashIcon /></button>
           <button type="button" className="flight-collapse" onClick={() => setExpanded((value) => !value)} aria-label={`${expanded ? "Recolher" : "Expandir"} ${title}`} aria-expanded={expanded}><ChevronIcon expanded={!expanded} /></button>
-        </div> : null}
+        </div>
       </div>
       {expanded ? <div className="compact-flight-layout">
         <div className="compact-flight-main">
@@ -3235,7 +3235,7 @@ function CompactFlightBlock({ title, flight, onChange, segments, onSegmentsChang
             <button className="light-mini add-flight-segment" type="button" onClick={() => onSegmentsChange([...segments, inheritFlightBaggage({ ...emptyFlight(), segmentId: uid() }, flight, true)])}>＋ Adicionar trecho</button>
           </div> : null}
         </div>
-        {detailsOpen ? <div className="compact-passenger-panel">
+        <div className="compact-passenger-panel">
           <div className="compact-passenger-list">
             {flight.passengers.map((passenger, index) => <div className="compact-passenger" key={passenger.id}>
               <div className="compact-passenger-heading">
@@ -3258,7 +3258,7 @@ function CompactFlightBlock({ title, flight, onChange, segments, onSegmentsChang
             <label className="flight-baggage-row"><span><FlightBagIcon kind="pet" />Pets</span><input className="flight-small-number" type="number" min="0" aria-label="Quantidade de pets" value={flight.pets} onChange={(e) => onChange({ ...flight, pets: Number(e.target.value) })} /></label>
             <label className="flight-baggage-row"><span><FlightBagIcon kind="refund" />Reembolsável</span><span className="switch flight-refund-switch"><input type="checkbox" checked={flight.refundable} onChange={(e) => onChange({ ...flight, refundable: e.target.checked })} /><span aria-hidden="true" /></span></label>
           </div>
-        </div> : null}
+        </div>
       </div> : null}
     </section>
   );

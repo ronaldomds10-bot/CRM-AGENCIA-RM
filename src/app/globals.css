@@ -2947,7 +2947,7 @@ textarea:focus-visible {
 }
 
 /* Flights tab: match the supplied full-width flight editor reference. */
-.compact-flight-layout { grid-template-columns: minmax(0, 1fr); gap: 0.75rem; padding-top: 0.7rem; }
+.compact-flight-layout { grid-template-columns: minmax(0, 2fr) minmax(18rem, 1fr); gap: 1rem; padding-top: 0.7rem; }
 .compact-flight-main { gap: 1.3rem; }
 .compact-flight-heading { min-height: 2.15rem; padding-bottom: 0.65rem; }
 .compact-flight-heading h2 { font-size: 1rem; }
@@ -2980,8 +2980,10 @@ textarea:focus-visible {
 .flight-result-edit-column .manual-date-control button::after { content: ""; position: absolute; left: 1.05rem; top: calc(50% - 0.48rem); width: 0.22rem; height: 0.22rem; border-left: 1.5px solid #91a7c0; border-right: 1.5px solid #91a7c0; }
 .flight-card-remove { width: 1.7rem; height: 1.7rem; }
 .flight-card-remove svg { width: 0.85rem; height: 0.85rem; }
-.compact-passenger-panel { width: 100%; margin-top: 0.6rem; }
+.compact-passenger-panel { width: 100%; margin-top: 0; padding: 0.45rem; border: 1px solid #202c3e; border-radius: 0.4rem; background: #030b16; }
 @media (max-width: 900px) {
+  .compact-flight-layout { grid-template-columns: 1fr; }
+  .compact-passenger-panel { max-width: none; }
   .flight-result-meta { grid-template-columns: minmax(0, 2fr) minmax(0, 2fr) minmax(7rem, 1fr) auto; }
   .flight-result-route { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
 }
