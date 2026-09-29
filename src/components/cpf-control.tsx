@@ -28,6 +28,7 @@ export default function CpfControl(){
   const updatePassenger=(i:number,key:"name"|"cpf",value:string)=>setIssue(v=>({...v,passengers:v.passengers.map((p,n)=>n===i?{...p,[key]:value}:p)}));
   const azulAccounts=accounts.filter(a=>a.program==="Azul Fidelidade"&&!a.archived);
   return <div className="cpf-control">
+    <link rel="stylesheet" href="/cpf-control.css" />
     <header className="cpf-head"><div><h1>Controle de CPFs</h1><p>Uso de passageiros por conta que forneceu as milhas.</p></div><button className="dark-mini" onClick={()=>void refresh()}>Atualizar</button></header>
     {error?<p className="cpf-alert error" role="alert">{error}</p>:null}{notice?<p className="cpf-alert">{notice}</p>:null}
     <div className="cpf-tabs">{[["visao","Contas"],["emissoes","Emissões"],["azul","Beneficiários Azul"],...(data?.canManage?[["regras","Regras"]]:[])] .map(([key,label])=><button key={key} className={tab===key?"active":""} onClick={()=>setTab(key)}>{label}</button>)}</div>
