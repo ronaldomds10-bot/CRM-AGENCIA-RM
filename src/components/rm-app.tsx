@@ -3206,10 +3206,10 @@ function CompactFlightBlock({ title, flight, onChange, segments, onSegmentsChang
     <section className="compact-flight-panel">
       <div className="compact-flight-heading">
         <h2><PlaneSparkIcon /> {title}</h2>
-        <div className="compact-flight-heading-actions">
-          {onRemove ? <button type="button" className="flight-trash" onClick={onRemove} aria-label={`Remover ${title}`} title="Remover viagem"><TrashIcon /></button> : null}
+        {onRemove ? <div className="compact-flight-heading-actions">
+          <button type="button" className="flight-trash" onClick={onRemove} aria-label={`Remover ${title}`} title="Remover viagem"><TrashIcon /></button>
           <button type="button" className="flight-collapse" onClick={() => setExpanded((value) => !value)} aria-label={`${expanded ? "Recolher" : "Expandir"} ${title}`} aria-expanded={expanded}><ChevronIcon expanded={!expanded} /></button>
-        </div>
+        </div> : null}
       </div>
       {expanded ? <div className="compact-flight-layout">
         <div className="compact-flight-main">
@@ -3224,8 +3224,6 @@ function CompactFlightBlock({ title, flight, onChange, segments, onSegmentsChang
             </div>
           </div>
           {detailsOpen ? <div className="flight-extra-fields">
-              <Field label="Companhia"><AirlinePicker value={flight.airline} onChange={(airline) => onChange({ ...flight, airline })} /></Field>
-              <Field label="Classe do voo"><select className="input" value={flight.cabinClass ?? "Econômica"} onChange={(e) => onChange({ ...flight, cabinClass: e.target.value })}><option>Primeira Classe</option><option>Executiva</option><option>Econômica Premium</option><option>Econômica</option></select></Field>
               <Field label="Origem"><AirportInput value={flight.from} onChange={(from) => onChange({ ...flight, from })} /></Field>
               <Field label="Destino"><AirportInput value={flight.to} onChange={(to) => onChange({ ...flight, to })} /></Field>
               <Field label="Partida"><TimeInput value={flight.departTime} onChange={(departTime) => onChange({ ...flight, departTime })} /></Field>
@@ -3237,7 +3235,7 @@ function CompactFlightBlock({ title, flight, onChange, segments, onSegmentsChang
             <button className="light-mini add-flight-segment" type="button" onClick={() => onSegmentsChange([...segments, inheritFlightBaggage({ ...emptyFlight(), segmentId: uid() }, flight, true)])}>＋ Adicionar trecho</button>
           </div> : null}
         </div>
-        <div className="compact-passenger-panel">
+        {detailsOpen ? <div className="compact-passenger-panel">
           <div className="compact-passenger-list">
             {flight.passengers.map((passenger, index) => <div className="compact-passenger" key={passenger.id}>
               <div className="compact-passenger-heading">
@@ -3260,7 +3258,7 @@ function CompactFlightBlock({ title, flight, onChange, segments, onSegmentsChang
             <label className="flight-baggage-row"><span><FlightBagIcon kind="pet" />Pets</span><input className="flight-small-number" type="number" min="0" aria-label="Quantidade de pets" value={flight.pets} onChange={(e) => onChange({ ...flight, pets: Number(e.target.value) })} /></label>
             <label className="flight-baggage-row"><span><FlightBagIcon kind="refund" />Reembolsável</span><span className="switch flight-refund-switch"><input type="checkbox" checked={flight.refundable} onChange={(e) => onChange({ ...flight, refundable: e.target.checked })} /><span aria-hidden="true" /></span></label>
           </div>
-        </div>
+        </div> : null}
       </div> : null}
     </section>
   );
@@ -3293,7 +3291,8 @@ function FlightSummaryCard({ flight, onChange, label = "Voo", onRemove }: { flig
         const airline = registeredAirlines.find((item) => code.startsWith(item.code));
         onChange({ ...flight, code, airline: airline?.name || flight.airline });
       }} /></label>
-      <label className="flight-result-class-field"><span>Classe do voo</span><select className="flight-result-class" aria-label={`Classe do ${label.toLowerCase()}`} value={flight.cabinClass || ""} onChange={(event) => onChange({ ...flight, cabinClass: event.target.value })}><option value="">Selecione a classe</option><option>Primeira Classe</option><option>Executiva</option><option>Econômica Premium</option><option>Econômica</option></select></label>
+      <select className="flight-result-class" aria-label={`Classe do ${label.toLowerCase()}`} value={flight.cabinClass || ""} onChange={(event) => onChange({ ...flight, cabinClass: event.target.value })}><option value="">Classe do voo</option><option>Primeira Classe</option><option>Executiva</option><option>Econômica Premium</option><option>Econômica</option></select>
+      <select className="flight-result-airline" aria-label={`Companhia aérea do ${label.toLowerCase()}`} value={flight.airline} onChange={(event) => onChange({ ...flight, airline: event.target.value })}><option value="">Companhia aérea</option>{flight.airline && !flightAirlines.includes(flight.airline) ? <option value={flight.airline}>{flight.airline}</option> : null}{flightAirlines.map((airline) => <option key={airline} value={airline}>{airline}</option>)}</select>
       {onRemove ? <button type="button" className="flight-card-remove" aria-label={`Remover ${label}`} title="Remover voo" onClick={onRemove}><TrashIcon /></button> : null}
     </div>
     <div className="flight-result-route">
