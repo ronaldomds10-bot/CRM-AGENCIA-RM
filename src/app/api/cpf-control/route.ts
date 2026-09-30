@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { getSessionUser } from "@/lib/auth";
 import { getPool } from "@/lib/db";
-import { isAgencyManager } from "@/lib/tenant";
+import { isAgencyManager, isSuperAdmin } from "@/lib/tenant";
 import { isTrustedMutation, readJsonBody, RequestInputError } from "@/lib/security";
 import { countDistinctThirdParty, dateOnly, maskCpf, nextLatamRelease, normalizeValidCpf, saopauloToday, shiftCalendarMonths } from "@/lib/cpf-control-logic";
 
@@ -82,7 +82,7 @@ export async function GET(request: NextRequest) {
       const releases = [...byCpf.values()].map(nextLatamRelease).filter((date):date is string=>Boolean(date&&date>=today)).sort();
       return { account_id:a.id,program:a.program,alias:a.alias,holder_name:a.holder_name,holder_cpf:mask(a.holder_cpf.trim()),used,limit,remaining:Math.max(0,limit-used),percent:limit?used/limit:0,next_release:a.program === "LATAM Pass" ? releases[0] || null : null,rule_pending:a.program === "Azul Fidelidade" ? !rule||!rule.confirmed : false,history_incomplete:a.history_incomplete,cpf_rows:[...byCpf.entries()].map(([cpf,rows])=>({cpf:mask(cpf),first:rows.map(p=>p.issued_on).sort()[0],last:rows.map(p=>p.issued_on).sort().at(-1),emissions:rows.length,release:a.program === "LATAM Pass" ? nextLatamRelease(rows) : null})),azul_beneficiaries:bRows.filter((b)=>b.account_id===a.id)};
     });
-    return NextResponse.json({ accounts:accounts.rows.map(a=>({...a,holder_cpf:mask(a.holder_cpf.trim())})), emissions:emissions.rows, passengers:passengers.rows.map(p=>({...p,cpf:mask(p.cpf.trim())})), beneficiaries:bRows, rules:rules.rows, cards, canManage:isAgencyManager(actor) }, { headers:{"Cache-Control":"no-store"} });
+    return NextResponse.json({ accounts:accounts.rows.map(a=>({...a,holder_cpf:mask(a.holder_cpf.trim())})), emissions:emissions.rows, passengers:passengers.rows.map(p=>({...p,cpf:mask(p.cpf.trim())})), beneficiaries:bRows, rules:rules.rows, cards, canManage:isAgencyManager(actor), canDelete:isSuperAdmin(actor) }, { headers:{"Cache-Control":"no-store"} });
   } catch { return NextResponse.json({ error:"Não foi possível carregar o controle de CPFs." }, { status:503 }); }
 }
 
@@ -112,6 +112,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ok:true});
     }
     if(action==="archive") { if(!isAgencyManager(actor))return NextResponse.json({error:"Acesso restrito ao administrador."},{status:403}); const r=await getPool().query("UPDATE mileage_accounts SET archived=$1 WHERE id=$2 AND agency_id=$3",[body.archived===true,body.id,agency]); return NextResponse.json({ok:!!r.rowCount}); }
+    if(action==="delete-emission") {
+      if(!isSuperAdmin(actor))return NextResponse.json({error:"Acesso restrito ao administrador do sistema."},{status:403});
+      const id=String(body.id||""),client=await getPool().connect();
+      try {
+        await client.query("BEGIN");
+        const emission=await client.query("SELECT id FROM mileage_emissions WHERE id=$1 AND agency_id=$2 FOR UPDATE",[id,agency]);
+        if(!emission.rowCount)throw new RequestInputError("Emissão não encontrada.",404);
+        await client.query("DELETE FROM mileage_emission_passengers WHERE emission_id=$1",[id]);
+        await client.query("DELETE FROM mileage_emissions WHERE id=$1 AND agency_id=$2",[id,agency]);
+        await client.query("INSERT INTO mileage_audit(id,agency_id,actor_id,record_type,record_id,action,reason) VALUES($1,$2,$3,'emission',$4,'deleted','Exclusão solicitada pelo administrador do sistema')",[randomUUID(),agency,actor.id,id]);
+        await client.query("COMMIT");
+        return NextResponse.json({ok:true});
+      } catch(error) { await client.query("ROLLBACK"); throw error; }
+      finally { client.release(); }
+    }
     if(action==="emission") {
       const account=await getPool().query("SELECT * FROM mileage_accounts WHERE id=$1 AND agency_id=$2 AND archived=FALSE",[body.accountId,agency]); if(!account.rowCount)throw new RequestInputError("Conta de origem inválida.");
       const issued=asDate(body.issuedOn), passengers=Array.isArray(body.passengers)?body.passengers as Array<{name:string;cpf:string}>:[], cps=passengers.map(p=>validCpf(p.cpf));
