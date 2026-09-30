@@ -1,4 +1,8 @@
-export type UsageRow = { account_id: string; cpf: string; issued_on: string; status: string; released_at?: string | null };
+export type UsageRow = { account_id: string; cpf: string; issued_on: string | Date; status: string; released_at?: string | Date | null };
+
+export function dateOnly(value: string | Date) {
+  return value instanceof Date ? value.toISOString().slice(0,10) : String(value).slice(0,10);
+}
 
 export function normalizeValidCpf(raw: unknown) {
   const cpf=String(raw??"").replace(/\D/g,"");
@@ -22,7 +26,7 @@ export function shiftCalendarMonths(isoDate:string,months:number) {
 
 export function countDistinctThirdParty(rows:UsageRow[],accountId:string,program:string,holderCpf:string,today:string) {
   const cutoff=shiftCalendarMonths(today,-12),year=today.slice(0,4),seen=new Set<string>();
-  for(const row of rows){const issued=String(row.issued_on).slice(0,10);if(row.account_id!==accountId||row.status==="correcao"||row.released_at||row.cpf.trim()===holderCpf.trim())continue;
+  for(const row of rows){const issued=dateOnly(row.issued_on);if(row.account_id!==accountId||row.status==="correcao"||row.released_at||row.cpf.trim()===holderCpf.trim())continue;
     if(program==="LATAM Pass"&&issued<cutoff)continue;
     if(program==="Smiles"&&issued.slice(0,4)!==year)continue;
     seen.add(row.cpf.trim());
@@ -32,5 +36,5 @@ export function countDistinctThirdParty(rows:UsageRow[],accountId:string,program
 
 export function nextLatamRelease(rows:UsageRow[]) {
   if(!rows.length)return null;
-  return shiftCalendarMonths(rows.map(row=>String(row.issued_on).slice(0,10)).sort().at(-1)!,12);
+  return shiftCalendarMonths(rows.map(row=>dateOnly(row.issued_on)).sort().at(-1)!,12);
 }

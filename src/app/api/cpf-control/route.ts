@@ -4,7 +4,7 @@ import { getSessionUser } from "@/lib/auth";
 import { getPool } from "@/lib/db";
 import { isAgencyManager } from "@/lib/tenant";
 import { isTrustedMutation, readJsonBody, RequestInputError } from "@/lib/security";
-import { countDistinctThirdParty, maskCpf, nextLatamRelease, normalizeValidCpf, saopauloToday, shiftCalendarMonths } from "@/lib/cpf-control-logic";
+import { countDistinctThirdParty, dateOnly, maskCpf, nextLatamRelease, normalizeValidCpf, saopauloToday, shiftCalendarMonths } from "@/lib/cpf-control-logic";
 
 export const runtime = "nodejs";
 
@@ -74,7 +74,7 @@ export async function GET(request: NextRequest) {
     const cutoffStr=shiftCalendarMonths(today,-12);
     const cards = accounts.rows.map((a) => {
       const byCpf = new Map<string, typeof passengers.rows>();
-      for (const p of passengers.rows) if (p.account_id === a.id && p.cpf.trim() !== a.holder_cpf.trim() && p.status !== "correcao" && !p.released_at && (a.program === "LATAM Pass" ? p.issued_on >= cutoffStr : a.program === "Smiles" ? String(p.issued_on).slice(0,4) === today.slice(0,4) : false)) byCpf.set(p.cpf.trim(), [...(byCpf.get(p.cpf.trim()) || []), p]);
+      for (const p of passengers.rows) if (p.account_id === a.id && p.cpf.trim() !== a.holder_cpf.trim() && p.status !== "correcao" && !p.released_at && (a.program === "LATAM Pass" ? dateOnly(p.issued_on) >= cutoffStr : a.program === "Smiles" ? dateOnly(p.issued_on).slice(0,4) === today.slice(0,4) : false)) byCpf.set(p.cpf.trim(), [...(byCpf.get(p.cpf.trim()) || []), p]);
       const rule = rules.rows.find((r) => r.program === a.program && r.account_id === a.id && r.active) || rules.rows.find((r) => r.program === a.program && !r.account_id && r.active);
       const limit = Number(rule?.limit_count ?? (a.program === "LATAM Pass" ? 24 : a.program === "Smiles" ? 25 : 0));
       const azul = beneficiaries.rows.filter((b) => b.account_id === a.id && b.status === "ativo" && !(b.is_child && b.relationship_confirmed && b.exemption_confirmed));
