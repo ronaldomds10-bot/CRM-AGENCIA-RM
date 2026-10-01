@@ -55,6 +55,14 @@ function publicTour(value: unknown) {
   };
 }
 
+function publicTransfer(value: unknown) {
+  const transfer = object(value);
+  return {
+    ...publicTour(transfer), outboundOrigin: string(transfer.outboundOrigin, 200), outboundDestination: string(transfer.outboundDestination, 200),
+    returnOrigin: string(transfer.returnOrigin, 200), returnDestination: string(transfer.returnDestination, 200), category: string(transfer.category, 80),
+  };
+}
+
 export function publicQuoteDto(value: unknown) {
   const quote = object(value);
   return {
@@ -64,6 +72,7 @@ export function publicQuoteDto(value: unknown) {
     flightOut: publicFlight(quote.flightOut), flightBack: publicFlight(quote.flightBack), flightOutSegments: array(quote.flightOutSegments).slice(0, 8).map(publicFlight),
     flightBackSegments: array(quote.flightBackSegments).slice(0, 8).map(publicFlight), car: publicCar(quote.car), hotel: publicHotel(quote.hotel),
     hotelOptions: array(quote.hotelOptions).slice(0, 8).map(publicHotel), insurance: publicInsurance(quote.insurance), tours: array(quote.tours).slice(0, 30).map(publicTour),
+    transfers: array(quote.transfers).slice(0, 30).map(publicTransfer),
   };
 }
 

@@ -27,7 +27,7 @@ type CurrentUser = { id: string; email: string; name: string; role: UserRole; ag
 type ManagedUser = { id: string; email: string; name: string; role: UserRole; active: boolean; created_at: string; agency_id: string | null; agency_name?: string | null };
 type Agency = { id: string; name: string; slug: string; active: boolean; user_count: number };
 const isManagerRole = (role: UserRole) => role === "super_admin" || role === "agency_admin";
-type QuoteTab = "trip" | "flights" | "cars" | "hotels" | "insurance" | "tours" | "import";
+type QuoteTab = "trip" | "flights" | "cars" | "hotels" | "insurance" | "tours" | "transfer" | "import";
 type Status = "cotacao" | "aguardando" | "emitido" | "cancelado";
 type Airport = { i: string; c: string; n: string; p: string };
 type Passenger = { id: string; name: string; surname: string; ticket: string; checkedBags: number; carryOnBags: number; backpacks: number };
@@ -192,6 +192,7 @@ type TourReservation = {
   travelers: number;
   refundable: boolean;
 };
+type TransferReservation = TourReservation & { outboundOrigin: string; outboundDestination: string; returnOrigin: string; returnDestination: string; category: string };
 type IssueAttachment = {
   id: string;
   name: string;
@@ -257,6 +258,7 @@ type Quote = {
   hotelOptions?: HotelReservation[];
   insuranceOptions?: InsuranceReservation[];
   tours: TourReservation[];
+  transfers: TransferReservation[];
 };
 type Client = {
   id: string;
@@ -679,6 +681,7 @@ function defaultQuote(): Quote {
       price: 180,
     },
     tours: [],
+    transfers: [],
   };
 }
 function blankQuote(): Quote {
@@ -706,6 +709,7 @@ function blankQuote(): Quote {
     },
     insurance: { provider: "", plan: "", travelers: 0, price: 0 },
     tours: [],
+    transfers: [],
     issue: {
       ...quote.issue, locator: "", locatorLink: "", provider: "", milesSupplier: "", pointsAmount: 0, thousandCost: 0, fees: 0, ticket: "",
       saleDate: "", paidAt: "", dueDate: "", extraNotes: "",
@@ -869,6 +873,7 @@ function normalizeQuote(value: Partial<Quote>): Quote {
     hotelOptions: value.hotelOptions ?? [],
     insuranceOptions: value.insuranceOptions ?? [],
     tours: value.tours ?? [],
+    transfers: value.transfers ?? [],
   };
 }
 function normalizeData(parsed: Partial<CRMData>, includeSeedRecords = true): CRMData {
@@ -986,6 +991,11 @@ function tourSummary(tour: TourReservation) {
     tour.observation,
     tour.price ? `Valor: ${money(tour.price)}` : "",
   ].filter(Boolean).join("\n");
+}
+
+function transferSummary(transfer: TransferReservation) {
+  const route = (label: string, origin: string, destination: string) => origin || destination ? `${label}: ${origin || "A confirmar"} → ${destination || "A confirmar"}` : "";
+  return [transfer.name, [transfer.provider, transfer.date ? new Date(`${transfer.date}T12:00:00`).toLocaleDateString("pt-BR") : "", transfer.category].filter(Boolean).join(" · "), route("Ida", transfer.outboundOrigin, transfer.outboundDestination), route("Volta", transfer.returnOrigin, transfer.returnDestination), `${transfer.travelers || 0} viajantes`, transfer.description, transfer.observation, transfer.price ? `Valor: ${money(transfer.price)}` : "", `Reembolsável: ${transfer.refundable ? "Sim" : "Não"}`].filter(Boolean).join("\n");
 }
 
 function downloadClientsPdf(clients: Client[]) {
@@ -1113,6 +1123,7 @@ function openQuotePdfLegacy(quote: Quote, settings: AppSettings, downloadName?: 
     }
   };
   renderLegacyExtra("Passeios", quote.tours.map(tourSummary).join("\n\n"));
+  renderLegacyExtra("Transfer", quote.transfers.map(transferSummary).join("\n\n"));
   renderLegacyExtra("Detalhes do orçamento", quote.notes.trim());
   presentPdf(pdf, downloadName);
 }
@@ -1315,6 +1326,7 @@ async function openQuotePdf(quote: Quote, settings: AppSettings, downloadName?: 
     }
   };
   renderExtraSection("Passeios", quote.tours.map((tour, index) => `Passeio ${index + 1}\n${tourSummary(tour)}`));
+  renderExtraSection("Transfer", quote.transfers.map((transfer, index) => `Transfer ${index + 1}\n${transferSummary(transfer)}`));
   if (quote.notes.trim()) renderExtraSection("Detalhes do orçamento", [quote.notes.trim()]);
 
   presentPdf(pdf, downloadName);
@@ -2422,6 +2434,7 @@ function SharedQuotePage({ quote, settings }: SharedQuote) {
         {quote.car.pickupAddress ? <section className="shared-section"><h2>Reservas de carro</h2><p><strong>Retirada:</strong> {quote.car.pickupAddress} em {date(quote.car.pickupDate)}</p><p><strong>Devolução:</strong> {quote.car.returnAddress} em {date(quote.car.returnDate)}</p><p>{quote.car.models}</p></section> : null}
         {hotels.length ? <section className="shared-section"><h2>Hospedagem</h2><div className="shared-hotels">{hotels.map((hotel, index) => <SharedHotel key={`${hotel.name}-${index}`} hotel={hotel} index={index} sharedId={sharedId} date={date} />)}</div></section> : null}
         {quote.tours.length ? <section className="shared-section"><h2>Passeios</h2>{quote.tours.map((tour, index) => <article key={`${tour.name}-${index}`} className="shared-hotel-copy"><small>Passeio {index + 1}</small><h3>{tour.name}</h3><p>{[tour.provider, tour.date ? date(tour.date) : ""].filter(Boolean).join(" · ")}</p><p className="shared-notes">{tour.description}</p>{tour.observation ? <p className="shared-notes">{tour.observation}</p> : null}</article>)}</section> : null}
+        {quote.transfers.length ? <section className="shared-section"><h2>Transfer</h2>{quote.transfers.map((transfer, index) => <article key={`${transfer.name}-${index}`} className="shared-hotel-copy"><small>Transfer {index + 1}</small><h3>{transfer.name}</h3><p>{[transfer.provider, transfer.date ? date(transfer.date) : "", transfer.category].filter(Boolean).join(" · ")}</p><p>{transfer.outboundOrigin} → {transfer.outboundDestination}</p>{transfer.returnOrigin || transfer.returnDestination ? <p>{transfer.returnOrigin} → {transfer.returnDestination}</p> : null}<p className="shared-notes">{transfer.description}</p>{transfer.observation ? <p className="shared-notes">{transfer.observation}</p> : null}</article>)}</section> : null}
         <section className="shared-section shared-attendant"><h2><SharedIcon kind="person" /> Seu Atendente</h2><p className="shared-attendant-intro">Estamos aqui para ajudar em qualquer dúvida sobre sua viagem</p><div className="shared-attendant-profile"><span className="shared-attendant-avatar" aria-hidden="true">{(settings.contactName || "RM").trim().slice(0, 2).toUpperCase()}</span><div><h3>{settings.contactName || "Equipe de atendimento"}</h3>{settings.contactEmail ? <p><SharedIcon kind="mail" />{settings.contactEmail}</p> : null}{settings.contactPhone ? <p><SharedIcon kind="phone" />{settings.contactPhone}</p> : null}{settings.companyName ? <p><SharedIcon kind="building" />{settings.companyName}</p> : null}</div></div></section>
         {quote.notes ? <section className="shared-section"><h2>Informações adicionais</h2><p className="shared-notes">{quote.notes}</p></section> : null}
         <section className={`shared-cta${quote.showValues ? " shared-cta-with-price" : ""}`}>
@@ -2794,6 +2807,7 @@ function QuoteEditor({
     ["hotels", "Hospedagens"],
     ["insurance", "Seguro Viagem"],
     ["tours", "Passeios"],
+    ["transfer", "Transfer"],
     ["import", "Importar"],
   ];
   const importLabels = {
@@ -2876,6 +2890,7 @@ function QuoteEditor({
         <InsuranceForm quote={draft} onChange={setDraft} onImport={() => setImportSection("insurance")} />
       ) : null}
       {tab === "tours" ? <ToursForm quote={draft} onChange={setDraft} /> : null}
+      {tab === "transfer" ? <TransfersForm quote={draft} onChange={setDraft} /> : null}
       {tab === "import" ? <ExternalQuoteImport quote={draft} onChange={setDraft} /> : null}
       {importSection ? (
         <QuoteImportModal
@@ -3724,6 +3739,33 @@ function ToursForm({ quote, onChange }: { quote: Quote; onChange: (quote: Quote)
       )) : <div className="empty-state"><h2>Nenhum passeio</h2><p>Importe um orçamento ou adicione um passeio.</p></div>}
     </SectionBand>
   );
+}
+
+function TransfersForm({ quote, onChange }: { quote: Quote; onChange: (quote: Quote) => void }) {
+  const update = (index: number, changes: Partial<TransferReservation>) => {
+    const transfers = [...quote.transfers];
+    transfers[index] = { ...transfers[index], ...changes };
+    onChange({ ...quote, transfers });
+  };
+  const blank = (): TransferReservation => ({ name: "", provider: "", date: "", description: "", observation: "", price: 0, travelers: 0, refundable: false, outboundOrigin: "", outboundDestination: "", returnOrigin: "", returnDestination: "", category: "Regular" });
+  return <SectionBand icon="◇" title="Transfer" action="Novo transfer" onAdd={() => onChange({ ...quote, transfers: [...quote.transfers, blank()] })}>
+    {quote.transfers.length ? quote.transfers.map((transfer, index) => <Panel key={index} title={`Transfer ${index + 1}`}><div className="form-grid">
+      <Field label="Nome"><input className="input" value={transfer.name} onChange={(event) => update(index, { name: event.target.value })} /></Field>
+      <Field label="Fornecedor"><input className="input" value={transfer.provider} onChange={(event) => update(index, { provider: event.target.value })} /></Field>
+      <Field label="Data"><input className="input" type="date" value={transfer.date} onChange={(event) => update(index, { date: event.target.value })} /></Field>
+      <Field label="Tipo"><input className="input" value={transfer.category} onChange={(event) => update(index, { category: event.target.value })} /></Field>
+      <Field label="Origem ida"><input className="input" value={transfer.outboundOrigin} onChange={(event) => update(index, { outboundOrigin: event.target.value })} /></Field>
+      <Field label="Destino ida"><input className="input" value={transfer.outboundDestination} onChange={(event) => update(index, { outboundDestination: event.target.value })} /></Field>
+      <Field label="Origem volta"><input className="input" value={transfer.returnOrigin} onChange={(event) => update(index, { returnOrigin: event.target.value })} /></Field>
+      <Field label="Destino volta"><input className="input" value={transfer.returnDestination} onChange={(event) => update(index, { returnDestination: event.target.value })} /></Field>
+      <Stepper label="Viajantes" value={transfer.travelers} onChange={(travelers) => update(index, { travelers })} />
+      <Field label="Valor"><CurrencyInput value={transfer.price} onChange={(price) => update(index, { price })} /></Field>
+      <label className="toggle-row"><input type="checkbox" checked={transfer.refundable} onChange={(event) => update(index, { refundable: event.target.checked })} /> Reembolsável</label>
+      <Field label="Descrição" className="trip-notes-field"><textarea className="input trip-notes" rows={6} value={transfer.description} onChange={(event) => update(index, { description: event.target.value })} /></Field>
+      <Field label="Observações" className="trip-notes-field"><textarea className="input trip-notes" rows={4} value={transfer.observation} onChange={(event) => update(index, { observation: event.target.value })} /></Field>
+      <button className="danger-mini" type="button" onClick={() => onChange({ ...quote, transfers: quote.transfers.filter((_, itemIndex) => itemIndex !== index) })}>Excluir transfer</button>
+    </div></Panel>) : <div className="empty-state"><h2>Nenhum transfer</h2><p>Adicione um transfer ou importe os dados na aba Importar.</p></div>}
+  </SectionBand>;
 }
 
 async function prepareOcrImage(source: string) {

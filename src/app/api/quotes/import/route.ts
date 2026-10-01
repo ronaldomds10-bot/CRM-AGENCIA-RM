@@ -390,6 +390,9 @@ function mapPdfText(rawText: string) {
   const explicitNotes = clean.match(/(?:Informa[çc][õo]es adicionais|Observa[çc][õo]es)\s*:?\s*([\s\S]*?)(?=\n(?:VOOS?|CARROS?|HOSPEDAGENS?|HOT[EÉ]IS?|SEGURO|PASSEIOS?|SERVI[ÇC]OS?|RESUMO)\b|$)/i)?.[1]?.trim() || "";
   const foundDates = Array.from(clean.matchAll(/\b(\d{1,2}\/\d{1,2}\/\d{2,4})\b/g), (match) => parseBrazilianDate(match[1])).filter(Boolean).sort();
   const startDate = parseBrazilianDate(startMatch?.[1] || "") || foundDates[0] || "";
+  const transferHead = clean.split("\n").map((line) => line.trim()).find((line) => line.length > 18 && /(?:transfer|traslado)/i.test(line)) || clean.match(/(?:transfer|traslado)[^\n]{0,180}/i)?.[0]?.trim() || "";
+  const transferStart = transferHead ? clean.toLowerCase().indexOf(transferHead.toLowerCase()) : -1;
+  const transferSection = transferStart >= 0 ? clean.slice(transferStart, transferStart + 1600) : "";
   const endDate = parseBrazilianDate(endMatch?.[1] || "") || foundDates.at(-1) || "";
   const fallbackYear = startDate.slice(0, 4) || String(new Date().getFullYear());
   const address = clean.match(/\n([^\n]{8,160},\s*[^,\n]+\s+BR),?\n/i)?.[1] || "";
@@ -416,6 +419,18 @@ function mapPdfText(rawText: string) {
   const serviceDate = clean.match(/Pacote de servi[çc]os[\s\S]{0,30}?(\d{1,2}\/\d{1,2}\/(?:\d{4}|\d{2}))/i)?.[1] || "";
   const serviceTravelers = Number(clean.match(/Pacote de servi[çc]os[\s\S]{0,40}?\d{1,2}\/\d{1,2}\/(?:\d{4}|\d{2})\s*(\d+)\s+Adultos/i)?.[1] || 0);
   const carSection = clean.match(/(?:Aluguel de carro|Loca[çc][aã]o de ve[ií]culo|Carro)\s*([\s\S]*?)(?=\n(?:HOSPEDAGEM|HOTEL|SEGURO|PASSEIO|SERVI[ÇC]O|RESUMO)\b|$)/i)?.[1] || "";
+  const transferRoute = transferSection.match(/(?:aeroporto|hotel|endere[çc]o)\s+(?:de|em)\s+([^|\n]+)\|\s*(?:hotel|aeroporto|endere[çc]o)\s+(?:de|em)\s+([^\n]+)/i);
+  const transferDate = transferSection.match(/(?:data|ida|transfer)[^\n]{0,50}(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)/i)?.[1] || transferSection.match(/\b(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)\b/)?.[1] || "";
+  const transferPassengerLine = transferSection.match(/([^\n]*(?:adultos?|crian[çc]as?)[^\n]*)/i)?.[1] || "";
+  const transferTravelers = Number(transferSection.match(/(\d+)\s*(?:viajantes|passageiros|adultos?)/i)?.[1] || 0) || [...transferPassengerLine.matchAll(/(\d+)\s*(?:adultos?|crian[çc]as?)/gi)].reduce((total, match) => total + Number(match[1]), 0);
+  const transfer = transferHead ? {
+    name: transferHead, provider: transferSection.match(/(?:fornecedor|operador)\s*:?\s*([^\n]+)/i)?.[1]?.trim() || "",
+    date: dateWithYear(transferDate, fallbackYear), description: transferSection.split("\n").slice(1, 8).join(" ").trim(), observation: "",
+    price: parseMoney(transferSection.match(/(?:valor|total)\s*:?\s*R?\$?\s*([\d.,]+)/i)?.[1] || ""), travelers: transferTravelers,
+    refundable: /reembols[aá]vel/i.test(transferSection), outboundOrigin: transferRoute?.[1]?.trim() || "",
+    outboundDestination: transferRoute?.[2]?.trim() || "", returnOrigin: transferRoute?.[2]?.trim() || "",
+    returnDestination: transferRoute?.[1]?.trim() || "", category: /privad[oa]/i.test(transferSection) ? "Privativo" : "Regular",
+  } : undefined;
   const pickup = carSection.match(/(?:Retirada|Pick-?up)\s*:?\s*(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)(?:\s+(\d{2}:\d{2}))?/i);
   const dropoff = carSection.match(/(?:Devolu[çc][aã]o|Drop-?off)\s*:?\s*(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)(?:\s+(\d{2}:\d{2}))?/i);
   const car = carSection ? {
@@ -453,7 +468,8 @@ function mapPdfText(rawText: string) {
     hotelOptions: hotels.slice(1),
     car,
     insurance,
-    tours: serviceMatch ? [{ name: serviceMatch[1].trim(), provider: "", date: parseBrazilianDate(serviceDate), description: serviceMatch[2].trim(), observation: "", price: 0, travelers: serviceTravelers, refundable: false }] : [],
+    tours: serviceMatch && !transfer ? [{ name: serviceMatch[1].trim(), provider: "", date: parseBrazilianDate(serviceDate), description: serviceMatch[2].trim(), observation: "", price: 0, travelers: serviceTravelers, refundable: false }] : [],
+    ...(transfer ? { transfers: [transfer] } : {}),
   };
 }
 
