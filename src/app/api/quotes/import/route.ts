@@ -181,6 +181,43 @@ function mapTour(value: unknown) {
   };
 }
 
+function isTransferBooking(value: unknown) {
+  const source = serviceSource(record(value));
+  const kind = [source.name, source.title, source.type, source.category, source.serviceType, source.description].map(text).join(" ");
+  return /transfer|traslado/i.test(kind);
+}
+
+function mapTransfer(value: unknown) {
+  const wrapper = record(value);
+  const source = serviceSource(wrapper);
+  const location = (...values: unknown[]) => {
+    for (const value of values) {
+      if (typeof value === "string" && value.trim()) return value.trim();
+      const item = record(value);
+      const label = text(item.name) || text(item.address) || text(item.description) || text(valueAt(item, "city", "name"));
+      if (label) return label;
+    }
+    return "";
+  };
+  const outbound = record(source.outbound ?? source.departure ?? source.pickup ?? source);
+  const inbound = record(source.return ?? source.inbound ?? source.dropoff);
+  const description = stripHtml(source.description) || stripHtml(wrapper.textDoc);
+  return {
+    name: text(source.name) || text(source.title) || "Transfer importado",
+    provider: text(source.provider) || text(valueAt(source, "providerDetail", "name")) || text(wrapper.provider),
+    date: datePart(source.date) || datePart(source.pickupDate) || datePart(outbound.date),
+    description, observation: text(source.observation) || "",
+    price: fareTotal(wrapper) || fareTotal(source),
+    travelers: array(wrapper.names).length || array(source.names).length || number(source.travelers) || number(source.passengers),
+    refundable: Boolean(valueAt(wrapper, "cancellationPolicies", "refundable")) || Boolean(source.refundable),
+    outboundOrigin: location(outbound.origin, outbound.from, outbound.pickupLocation, outbound.originAddress, source.origin),
+    outboundDestination: location(outbound.destination, outbound.to, outbound.dropoffLocation, outbound.destinationAddress, source.destination),
+    returnOrigin: location(inbound.origin, inbound.from, inbound.pickupLocation, source.returnOrigin),
+    returnDestination: location(inbound.destination, inbound.to, inbound.dropoffLocation, source.returnDestination),
+    category: text(source.category) || text(source.type) || text(source.serviceType) || "Regular",
+  };
+}
+
 function mapCar(value: unknown) {
   const wrapper = record(value);
   const source = record(wrapper.vehicle ?? wrapper.car ?? wrapper.rentalCar ?? wrapper);
@@ -222,8 +259,10 @@ function mapInfoTravelBooking(booking: AnyRecord) {
     const segments = array(flight.segments);
     return (segments.length ? segments : [flight]).map((segment) => mapFlight(segment, names));
   });
-  const serviceKeys = ["bookingServicePackages", "bookingTours", "bookingServiceOthers", "bookingExperiences", "bookingCircuits", "bookingTransfers"];
-  const tours = packages.flatMap((item) => serviceKeys.flatMap((key) => items(item[key]))).map(mapTour);
+  const serviceKeys = ["bookingServicePackages", "bookingTours", "bookingServiceOthers", "bookingExperiences", "bookingCircuits"];
+  const services = packages.flatMap((item) => serviceKeys.flatMap((key) => items(item[key])));
+  const transfers = [...packages.flatMap((item) => items(item.bookingTransfers)), ...services.filter(isTransferBooking)].map(mapTransfer);
+  const tours = services.filter((service) => !isTransferBooking(service)).map(mapTour);
   const cars = packages.flatMap((item) => items(item.bookingVehicles)).map(mapCar);
   const insurances = packages.flatMap((item) => items(item.bookingInsurances)).map(mapInsurance);
   const firstOutbound = mappedJourneys[0] ?? [];
@@ -232,11 +271,12 @@ function mapInfoTravelBooking(booking: AnyRecord) {
     ...hotels.flatMap((hotel) => [hotel.checkin, hotel.checkout]),
     ...mappedJourneys.flat().flatMap((flight) => [flight.date, flight.arrivalDate]),
     ...tours.map((tour) => tour.date),
+    ...transfers.map((transfer) => transfer.date),
   ].filter(Boolean).sort();
   const outbound = firstOutbound[0];
   const returning = firstReturn[0];
   const firstPassenger = record(array(flightBookings[0]?.names)[0]);
-  const destination = outbound?.to.split(" - ").slice(1).join(" - ") || hotels[0]?.address.split(",").at(-2)?.trim() || tours[0]?.name || "";
+  const destination = outbound?.to.split(" - ").slice(1).join(" - ") || hotels[0]?.address.split(",").at(-2)?.trim() || transfers[0]?.outboundDestination || tours[0]?.name || "";
   const paymentText = stripHtml(booking.textDoc);
   return {
     name: `Orçamento ${number(booking.id) || "importado"}`,
@@ -260,6 +300,7 @@ function mapInfoTravelBooking(booking: AnyRecord) {
     insurance: insurances[0],
     insuranceOptions: insurances.slice(1),
     tours,
+    transfers,
   };
 }
 
@@ -557,7 +598,7 @@ export async function POST(request: NextRequest) {
       if (ocrText.length > 64 * 1024) return NextResponse.json({ error: "Texto do print muito grande." }, { status: 413 });
       const data = mapPdfText(ocrText);
       const fields = record(data);
-      const meaningful = Boolean(text(fields.client) || text(fields.destination) || number(fields.cashPrice) || Object.keys(record(fields.flightOut)).length || Object.keys(record(fields.hotel)).length || Object.keys(record(fields.car)).length || Object.keys(record(fields.insurance)).length || array(fields.tours).length);
+      const meaningful = Boolean(text(fields.client) || text(fields.destination) || number(fields.cashPrice) || Object.keys(record(fields.flightOut)).length || Object.keys(record(fields.hotel)).length || Object.keys(record(fields.car)).length || Object.keys(record(fields.insurance)).length || array(fields.tours).length || array(fields.transfers).length);
       if (!meaningful) return NextResponse.json({ error: "Não encontrei campos de viagem reconhecíveis no print." }, { status: 422 });
       return NextResponse.json({ data, source: "ocr" });
     }
