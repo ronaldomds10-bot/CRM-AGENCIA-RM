@@ -183,7 +183,8 @@ function mapTour(value: unknown) {
 
 function isTransferBooking(value: unknown) {
   const source = serviceSource(record(value));
-  const kind = [source.name, source.title, source.type, source.category, source.serviceType, source.description].map(text).join(" ");
+  const kind = [source.name, source.title, source.type, source.category, source.serviceType].map(text).join(" ");
+  if (/roteiro/i.test(kind)) return false;
   return /transfer|traslado/i.test(kind);
 }
 
@@ -432,6 +433,7 @@ function mapPdfText(rawText: string) {
   const foundDates = Array.from(clean.matchAll(/\b(\d{1,2}\/\d{1,2}\/\d{2,4})\b/g), (match) => parseBrazilianDate(match[1])).filter(Boolean).sort();
   const startDate = parseBrazilianDate(startMatch?.[1] || "") || foundDates[0] || "";
   const transferHead = clean.split("\n").map((line) => line.trim()).find((line) => line.length > 18 && /(?:transfer|traslado)/i.test(line)) || clean.match(/(?:transfer|traslado)[^\n]{0,180}/i)?.[0]?.trim() || "";
+  const serviceItinerary = Boolean(serviceMatch && /roteiro/i.test(`${serviceMatch[1]} ${serviceMatch[2]}`));
   const transferStart = transferHead ? clean.toLowerCase().indexOf(transferHead.toLowerCase()) : -1;
   const transferSection = transferStart >= 0 ? clean.slice(transferStart, transferStart + 1600) : "";
   const endDate = parseBrazilianDate(endMatch?.[1] || "") || foundDates.at(-1) || "";
@@ -464,7 +466,7 @@ function mapPdfText(rawText: string) {
   const transferDate = transferSection.match(/(?:data|ida|transfer)[^\n]{0,50}(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)/i)?.[1] || transferSection.match(/\b(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)\b/)?.[1] || "";
   const transferPassengerLine = transferSection.match(/([^\n]*(?:adultos?|crian[çc]as?)[^\n]*)/i)?.[1] || "";
   const transferTravelers = Number(transferSection.match(/(\d+)\s*(?:viajantes|passageiros|adultos?)/i)?.[1] || 0) || [...transferPassengerLine.matchAll(/(\d+)\s*(?:adultos?|crian[çc]as?)/gi)].reduce((total, match) => total + Number(match[1]), 0);
-  const transfer = transferHead ? {
+  const transfer = transferHead && !serviceItinerary ? {
     name: transferHead, provider: transferSection.match(/(?:fornecedor|operador)\s*:?\s*([^\n]+)/i)?.[1]?.trim() || "",
     date: dateWithYear(transferDate, fallbackYear), description: transferSection.split("\n").slice(1, 8).join(" ").trim(), observation: "",
     price: parseMoney(transferSection.match(/(?:valor|total)\s*:?\s*R?\$?\s*([\d.,]+)/i)?.[1] || ""), travelers: transferTravelers,
@@ -509,7 +511,7 @@ function mapPdfText(rawText: string) {
     hotelOptions: hotels.slice(1),
     car,
     insurance,
-    tours: serviceMatch && !transfer ? [{ name: serviceMatch[1].trim(), provider: "", date: parseBrazilianDate(serviceDate), description: serviceMatch[2].trim(), observation: "", price: 0, travelers: serviceTravelers, refundable: false }] : [],
+    tours: serviceMatch && (serviceItinerary || !transfer) ? [{ name: serviceMatch[1].trim(), provider: "", date: parseBrazilianDate(serviceDate), description: serviceMatch[2].trim(), observation: "", price: 0, travelers: serviceTravelers, refundable: false }] : [],
     ...(transfer ? { transfers: [transfer] } : {}),
   };
 }
