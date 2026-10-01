@@ -2038,14 +2038,32 @@ export function RMApp() {
     setToast(message);
     window.setTimeout(() => setToast(""), 2600);
   }
-  function saveQuote(next: Quote) {
-    setEditing(next);
-    setData((cur) => ({
-      ...cur,
-      quotes: cur.quotes.some((q) => q.id === next.id)
-        ? cur.quotes.map((q) => (q.id === next.id ? next : q))
-        : [next, ...cur.quotes],
-    }));
+  async function saveQuote(next: Quote): Promise<void> {
+    const savedQuote = { ...next, createdAt: next.createdAt || new Date().toISOString() };
+    const updated = {
+      ...data,
+      quotes: data.quotes.some((q) => q.id === savedQuote.id)
+        ? data.quotes.map((q) => (q.id === savedQuote.id ? savedQuote : q))
+        : [savedQuote, ...data.quotes],
+    };
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    }
+    if (remoteEnabled) {
+      const response = await fetch("/api/crm-state", {
+        method: "PUT",
+        headers: { ...JSON_MUTATION_HEADERS, ...(currentUser && isManagerRole(currentUser.role) && stateVersion.current ? { "If-Match": stateVersion.current } : {}) },
+        body: JSON.stringify(updated),
+      });
+      const result = await response.json().catch(() => ({})) as { updatedAt?: string; error?: string };
+      if (!response.ok) throw new Error(result.error || "Falha ao salvar o orçamento no banco.");
+      stateVersion.current = result.updatedAt || stateVersion.current;
+      syncedData.current = JSON.stringify(updated);
+      setRemoteError("");
+    }
+    setEditing(savedQuote);
+    setData(updated);
   }
   function createQuote() {
     const quote = blankQuote();
@@ -2221,9 +2239,7 @@ export function RMApp() {
                 tab={quoteTab}
                 onTab={setQuoteTab}
                 onBack={() => setEditing(null)}
-                onSave={(q) => {
-                  saveQuote(q);
-                }}
+                onSave={saveQuote}
                 onDelete={removeQuote}
               />
             ) : (
