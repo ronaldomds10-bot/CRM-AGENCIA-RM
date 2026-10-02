@@ -2040,7 +2040,7 @@ export function RMApp() {
   }
   async function saveQuote(next: Quote): Promise<void> {
     const savedQuote = { ...next, createdAt: next.createdAt || new Date().toISOString() };
-    const updated = {
+    let updated = {
       ...data,
       quotes: data.quotes.some((q) => q.id === savedQuote.id)
         ? data.quotes.map((q) => (q.id === savedQuote.id ? savedQuote : q))
@@ -2051,12 +2051,31 @@ export function RMApp() {
       saveTimer.current = null;
     }
     if (remoteEnabled) {
-      const response = await fetch("/api/crm-state", {
+      let response = await fetch("/api/crm-state", {
         method: "PUT",
         headers: { ...JSON_MUTATION_HEADERS, ...(currentUser && isManagerRole(currentUser.role) && stateVersion.current ? { "If-Match": stateVersion.current } : {}) },
         body: JSON.stringify(updated),
       });
-      const result = await response.json().catch(() => ({})) as { updatedAt?: string; error?: string };
+      let result = await response.json().catch(() => ({})) as { updatedAt?: string; error?: string };
+      if (response.status === 409) {
+        const refresh = await fetch("/api/crm-state", { cache: "no-store" });
+        const latestState = await refresh.json().catch(() => ({})) as { data?: Partial<CRMData> | null; updatedAt?: string; error?: string };
+        if (!refresh.ok || !latestState.data) throw new Error(latestState.error || "Conflito ao salvar. Recarregue a página e tente novamente.");
+        const latest = normalizeData(latestState.data, Boolean(currentUser && isManagerRole(currentUser.role)));
+        stateVersion.current = latestState.updatedAt || "";
+        updated = {
+          ...latest,
+          quotes: latest.quotes.some((q) => q.id === savedQuote.id)
+            ? latest.quotes.map((q) => (q.id === savedQuote.id ? savedQuote : q))
+            : [savedQuote, ...latest.quotes],
+        };
+        response = await fetch("/api/crm-state", {
+          method: "PUT",
+          headers: { ...JSON_MUTATION_HEADERS, ...(currentUser && isManagerRole(currentUser.role) && stateVersion.current ? { "If-Match": stateVersion.current } : {}) },
+          body: JSON.stringify(updated),
+        });
+        result = await response.json().catch(() => ({})) as { updatedAt?: string; error?: string };
+      }
       if (!response.ok) throw new Error(result.error || "Falha ao salvar o orçamento no banco.");
       stateVersion.current = result.updatedAt || stateVersion.current;
       syncedData.current = JSON.stringify(updated);
@@ -2239,7 +2258,14 @@ export function RMApp() {
                 tab={quoteTab}
                 onTab={setQuoteTab}
                 onBack={() => setEditing(null)}
-                onSave={saveQuote}
+                onSave={async (q) => {
+                  try {
+                    await saveQuote(q);
+                  } catch (error) {
+                    setRemoteError(error instanceof Error ? error.message : "Falha ao salvar o orçamento.");
+                    throw error;
+                  }
+                }}
                 onDelete={removeQuote}
               />
             ) : (
