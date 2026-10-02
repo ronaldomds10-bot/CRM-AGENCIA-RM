@@ -68,7 +68,7 @@ function findDates(text: string, now: Date): DatedPosition[] {
   return dates.sort((left, right) => left.index - right.index);
 }
 
-function findStops(text: string): FlightStop[] {
+function findStops(text: string, knownAirportCodes?: ReadonlySet<string>): FlightStop[] {
   const stops: FlightStop[] = [];
   const add = (index: number, airport: string, hour: string, minute: string) => {
     const stop = { index, airport, time: `${hour.padStart(2, "0")}:${minute}` };
@@ -87,12 +87,22 @@ function findStops(text: string): FlightStop[] {
   // separate lines (for example "10:25\nBSB\nBrasilia") instead of showing
   // the code in parentheses. Associate each time with the first standalone
   // airport code before the next time.
-  const times = [...text.matchAll(/\b(\d{1,2})[:.]([0-5]\d)\b/g)];
-  for (const [index, time] of times.entries()) {
-    const nextTime = times[index + 1]?.index ?? text.length;
-    const segment = text.slice(time.index + time[0].length, Math.min(nextTime, time.index + 180));
-    const airport = segment.match(/^\s*[-–—]?\s*([A-Z]{3})\s*(?:\n|$)/m);
-    if (airport) add(time.index, airport[1], time[1], time[2]);
+  const times = [...text.matchAll(/\b(\d{1,2})\s*[:.]\s*([0-5]\d)\b/g)];
+  const airportMatches = [...text.matchAll(/\b([A-Z]{3})\b/g)]
+    .filter((match) => knownAirportCodes ? knownAirportCodes.has(match[1]) : true)
+    .map((match) => ({ index: match.index, airport: match[1] }));
+  const claimedAirports = new Set<number>();
+  for (const time of times) {
+    // OCR reading order varies between two-column itinerary cards. Search both
+    // sides of a time and choose the nearest recognized airport code instead
+    // of requiring it to be on the next line.
+    const nearbyAirport = airportMatches
+      .filter((airport) => !claimedAirports.has(airport.index) && Math.abs(airport.index - time.index) <= 220)
+      .sort((left, right) => Math.abs(left.index - time.index) - Math.abs(right.index - time.index))[0];
+    if (nearbyAirport) {
+      claimedAirports.add(nearbyAirport.index);
+      add(time.index, nearbyAirport.airport, time[1], time[2]);
+    }
   }
   return stops.sort((left, right) => left.index - right.index);
 }
@@ -121,9 +131,9 @@ function findRouteBlocks(text: string, now: Date, passengerCount?: number, cabin
   });
 }
 
-export function parseFlightPrint(rawText: string, now = new Date()): PrintFlight[] {
+export function parseFlightPrint(rawText: string, now = new Date(), knownAirportCodes?: ReadonlySet<string>): PrintFlight[] {
   const text = rawText.normalize("NFD").replace(/[\u0300-\u036f]/g, "").normalize("NFKC").toUpperCase().replace(/\r/g, "");
-  const stops = findStops(text);
+  const stops = findStops(text, knownAirportCodes);
   const dates = findDates(text, now);
   const codes = [...text.matchAll(/\b([A-Z][A-Z0-9])\s*[- ]?(\d{2,4})\b/g)]
     .map((match) => ({ code: `${match[1]}${match[2]}`, airline: airlineByPrefix[match[1]] }))

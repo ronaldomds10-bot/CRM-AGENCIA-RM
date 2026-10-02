@@ -3836,6 +3836,18 @@ async function prepareOcrImage(source: string) {
   } catch { return source; }
 }
 
+let flightPrintAirportCodesRequest: Promise<ReadonlySet<string> | undefined> | undefined;
+function getFlightPrintAirportCodes() {
+  flightPrintAirportCodesRequest ??= fetch("/airports.json", { cache: "force-cache" })
+    .then(async (response) => {
+      if (!response.ok) return undefined;
+      const airports = await response.json() as Array<{ i?: unknown }>;
+      return new Set(airports.map((airport) => typeof airport.i === "string" ? airport.i.toUpperCase() : "").filter(Boolean));
+    })
+    .catch(() => undefined);
+  return flightPrintAirportCodesRequest;
+}
+
 function ExternalQuoteImport({ quote, onChange }: { quote: Quote; onChange: (quote: Quote) => void }) {
   const [url, setUrl] = useState("");
   const [file, setFile] = useState<File | null>(null);
@@ -3920,13 +3932,30 @@ function ExternalQuoteImport({ quote, onChange }: { quote: Quote; onChange: (quo
     setStatus("loading"); setError("");
     let worker: Awaited<ReturnType<typeof import("tesseract.js")["createWorker"]>> | undefined;
     try {
-      const { createWorker } = await import("tesseract.js");
+      const { createWorker, PSM } = await import("tesseract.js");
       worker = await createWorker(["por", "eng"]);
       await worker.setParameters({ preserve_interword_spaces: "1" });
       const recognized: string[] = [];
       for (const image of images) {
         const { data } = await worker.recognize(await prepareOcrImage(image));
         recognized.push(data.text);
+      }
+      const airportCodes = await getFlightPrintAirportCodes();
+      for (let index = 0; index < recognized.length; index += 1) {
+        if (parseFlightPrint(recognized[index], new Date(), airportCodes).length) continue;
+        const image = await prepareOcrImage(images[index]);
+        let bestText = recognized[index];
+        let bestFlightCount = 0;
+        for (const pageSegmentationMode of [PSM.SPARSE_TEXT, PSM.SINGLE_BLOCK]) {
+          await worker.setParameters({ preserve_interword_spaces: "1", tessedit_pageseg_mode: pageSegmentationMode });
+          const { data } = await worker.recognize(image);
+          const flightCount = parseFlightPrint(data.text, new Date(), airportCodes).length;
+          if (flightCount > bestFlightCount) {
+            bestText = data.text;
+            bestFlightCount = flightCount;
+          }
+        }
+        recognized[index] = bestText;
       }
       const structuredResponse = await fetch("/api/quotes/import", {
         method: "POST",
@@ -3971,7 +4000,7 @@ function ExternalQuoteImport({ quote, onChange }: { quote: Quote; onChange: (quo
       }
       const flights: ReturnType<typeof parseFlightPrint> = [];
       for (const imageText of recognized) {
-        const found = parseFlightPrint(imageText);
+        const found = parseFlightPrint(imageText, new Date(), airportCodes);
         if (!found.length) {
           continue;
         }
