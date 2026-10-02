@@ -83,6 +83,17 @@ function findStops(text: string): FlightStop[] {
   for (const match of text.matchAll(/\b([A-Z]{3})[ \t]*(\d{1,2})[:.]([0-5]\d)\b/g)) {
     add(match.index, match[1], match[2], match[3]);
   }
+  // Airline and agency itinerary cards often put the time and IATA code on
+  // separate lines (for example "10:25\nBSB\nBrasilia") instead of showing
+  // the code in parentheses. Associate each time with the first standalone
+  // airport code before the next time.
+  const times = [...text.matchAll(/\b(\d{1,2})[:.]([0-5]\d)\b/g)];
+  for (const [index, time] of times.entries()) {
+    const nextTime = times[index + 1]?.index ?? text.length;
+    const segment = text.slice(time.index + time[0].length, Math.min(nextTime, time.index + 180));
+    const airport = segment.match(/^\s*[-–—]?\s*([A-Z]{3})\s*(?:\n|$)/m);
+    if (airport) add(time.index, airport[1], time[1], time[2]);
+  }
   return stops.sort((left, right) => left.index - right.index);
 }
 

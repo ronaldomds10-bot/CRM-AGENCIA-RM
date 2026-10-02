@@ -3970,11 +3970,14 @@ function ExternalQuoteImport({ quote, onChange }: { quote: Quote; onChange: (quo
         return;
       }
       const flights: ReturnType<typeof parseFlightPrint> = [];
-      for (const [index, imageText] of recognized.entries()) {
+      for (const imageText of recognized) {
         const found = parseFlightPrint(imageText);
-        if (!found.length) throw new Error(`Não encontrei aeroportos e horários no print ${index + 1}. Confira a imagem e tente novamente.`);
+        if (!found.length) {
+          continue;
+        }
         flights.push(...found);
       }
+      if (!flights.length) throw new Error("Não consegui identificar os trechos de voo. Tente enviar prints com horários e aeroportos visíveis.");
       const returnIndex = returnFlightIndex(flights);
       const makeFlight = (flight: typeof flights[number], existing: Flight, tripDate: string) => {
         const passengers = flight.passengerNames?.map((fullName) => {
