@@ -6,7 +6,9 @@ import { useEffect } from "react";
 export function NativeDatePickers() {
   useEffect(() => {
     const openCalendar = (event: MouseEvent) => {
-      const input = event.target;
+      const target = event.composedPath()[0];
+      const input = target instanceof HTMLInputElement ? target
+        : target instanceof Element ? target.closest("label")?.control : null;
       if (event.defaultPrevented || !(input instanceof HTMLInputElement)
         || !["date", "datetime-local", "month", "week"].includes(input.type)
         || input.disabled || input.readOnly || typeof input.showPicker !== "function") return;
@@ -19,8 +21,9 @@ export function NativeDatePickers() {
         // Keep the browser's native editing behavior when showPicker is unavailable.
       }
     };
-    document.addEventListener("click", openCalendar);
-    return () => document.removeEventListener("click", openCalendar);
+    // Capture also covers fields inside cards/dialogs that stop click bubbling.
+    document.addEventListener("click", openCalendar, true);
+    return () => document.removeEventListener("click", openCalendar, true);
   }, []);
   return null;
 }

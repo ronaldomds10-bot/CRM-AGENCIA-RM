@@ -2935,6 +2935,7 @@ function DateRangePicker({
   end: string;
   onChange: (start: string, end: string) => void;
 }) {
+  const fieldId = useId();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -2984,8 +2985,8 @@ function DateRangePicker({
   };
   return (
     <div className="date-range-field" ref={rootRef}>
-      <label>{label}</label>
-      <button type="button" className="input date-range-trigger" onClick={() => setOpen((value) => !value)} aria-expanded={open}>
+      <label htmlFor={fieldId}>{label}</label>
+      <button id={fieldId} type="button" className="input date-range-trigger" onClick={() => setOpen(true)} aria-expanded={open}>
         <span aria-hidden="true">□</span>
         {start ? `${shortDate(start)}${end ? ` – ${shortDate(end)}` : " – selecione a volta"}` : "Selecione ida e volta"}
       </button>
@@ -3004,6 +3005,7 @@ function DateRangePicker({
   );
 }
 function SingleDatePicker({ label, value, onChange, manual = false, helper, placeholder = "Selecione uma data" }: { label: string; value: string; onChange: (value: string) => void; manual?: boolean; helper?: string; placeholder?: string }) {
+  const fieldId = useId();
   const selected = value ? new Date(`${value}T12:00:00`) : new Date();
   const [open, setOpen] = useState(false);
   const [typedDate, setTypedDate] = useState(value ? selected.toLocaleDateString("pt-BR") : "");
@@ -3042,9 +3044,9 @@ function SingleDatePicker({ label, value, onChange, manual = false, helper, plac
   };
   return (
     <div className={`single-date-field ${manual ? "manual-date-field" : ""} ${open ? "date-open" : ""}`} ref={rootRef}>
-      <label>{label}</label>
+      <label htmlFor={fieldId}>{label}</label>
       {manual ? <div className="manual-date-control" onClick={() => setOpen(true)}>
-        <input className="input" inputMode="numeric" aria-label={label} aria-expanded={open} onKeyDown={(event) => { if (event.key === "Escape") setOpen(false); if (event.key === "ArrowDown") { event.preventDefault(); setOpen(true); } }} placeholder={placeholder} value={typedDate} onChange={(event) => {
+        <input id={fieldId} className="input" inputMode="numeric" onFocus={() => setOpen(true)} onClick={() => setOpen(true)} aria-label={label} aria-expanded={open} onKeyDown={(event) => { if (event.key === "Escape") setOpen(false); if (event.key === "ArrowDown") { event.preventDefault(); setOpen(true); } }} placeholder={placeholder} value={typedDate} onChange={(event) => {
           const digits = event.target.value.replace(/\D/g, "").slice(0, 8);
           const masked = digits.length > 4 ? `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}` : digits.length > 2 ? `${digits.slice(0, 2)}/${digits.slice(2)}` : digits;
           setTypedDate(masked);
@@ -3056,7 +3058,7 @@ function SingleDatePicker({ label, value, onChange, manual = false, helper, plac
           }
         }} />
         <button type="button" onClick={(event) => { event.stopPropagation(); setOpen((current) => !current); }} aria-label="Abrir calendário" aria-expanded={open}>□</button>
-       </div> : <button type="button" className="input date-range-trigger" onClick={() => setOpen((current) => !current)} aria-expanded={open}>
+       </div> : <button id={fieldId} type="button" className="input date-range-trigger" onClick={() => setOpen(true)} aria-expanded={open}>
           <span aria-hidden="true">□</span>
           {value ? selected.toLocaleDateString("pt-BR") : placeholder}
         </button>}
