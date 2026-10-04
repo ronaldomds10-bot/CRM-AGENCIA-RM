@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { NativeDatePickers } from "@/components/native-date-pickers";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -19,6 +20,7 @@ export default function RootLayout({
   return (
     <html lang="pt-BR" suppressHydrationWarning>
       <body suppressHydrationWarning>
+        <NativeDatePickers />
         <script
           suppressHydrationWarning
           dangerouslySetInnerHTML={{
