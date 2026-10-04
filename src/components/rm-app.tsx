@@ -1289,7 +1289,8 @@ async function openQuotePdf(quote: Quote, settings: AppSettings, downloadName?: 
   let y = 112;
   if (planePng) pdf.addImage(planePng, "PNG", margin, y - 5.3, 7.7, 7.7);
   text("Voos", 11.55, y, 13, ink, "bold"); y = 117.6;
-  const ensureSpace = (height: number) => { if (y + height <= 287) return; pdf.addPage(); page(); y = 12; };
+  let keepFlightSequenceTogether = false;
+  const ensureSpace = (height: number) => { if (keepFlightSequenceTogether || y + height <= 287) return; pdf.addPage(); page(); y = 12; };
   const renderFlight = (flight: Flight, title: string) => {
     ensureSpace(82.25);
     const isOutbound = title.startsWith("Ida");
@@ -1345,6 +1346,15 @@ async function openQuotePdf(quote: Quote, settings: AppSettings, downloadName?: 
   const renderFlightSequence = (flights: Flight[], direction: "Ida" | "Volta") => {
     const visible = flights.filter(hasFlight);
     const firstFlight = flights[0];
+    const startY = y;
+    keepFlightSequenceTogether = visible.length === 2;
+    const scale = keepFlightSequenceTogether ? Math.min(1, (287 - startY) / (82.25 * 2 + 3.15 + 9)) : 1;
+    if (keepFlightSequenceTogether) {
+      pdf.saveGraphicsState();
+      pdf.setCurrentTransformationMatrix(pdf.Matrix(scale, 0, 0, scale,
+        (margin + contentWidth / 2) * (1 - scale) * 72 / 25.4,
+        (291.2 - startY) * (1 - scale) * 72 / 25.4));
+    }
     visible.forEach((flight, index) => {
       if (index) {
         ensureSpace(12);
@@ -1353,8 +1363,20 @@ async function openQuotePdf(quote: Quote, settings: AppSettings, downloadName?: 
       }
       renderFlight(flight === firstFlight ? syncPassengerBaggage(flight) : inheritFlightBaggage(flight, firstFlight), index ? `${direction} · trecho ${index + 1}` : direction);
     });
+    if (keepFlightSequenceTogether) {
+      pdf.restoreGraphicsState();
+      y = startY + (y - startY) * scale;
+      keepFlightSequenceTogether = false;
+    }
   };
   renderFlightSequence(outboundFlights, "Ida");
+  if (outboundFlights.some(hasFlight) && returnFlights.some(hasFlight)
+    && (outboundFlights.filter(hasFlight).length > 1 || returnFlights.filter(hasFlight).length > 1)) {
+    pdf.addPage(); page();
+    if (planePng) pdf.addImage(planePng, "PNG", margin, 7, 7.7, 7.7);
+    text("Voos de volta", 11.55, 12.3, 13, ink, "bold");
+    y = 18;
+  }
   renderFlightSequence(returnFlights, "Volta");
   if (![...outboundFlights, ...returnFlights].some(hasFlight)) { openQuotePdfLegacy(quote, settings, downloadName); return; }
 
