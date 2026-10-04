@@ -169,7 +169,7 @@ export async function createEmissionPdf(emission: Emission, settings: Settings):
       + (rowHeights.length - 1) * 7.5 + 15.75 + 51, 0) - 51 + 6;
     const scale = Math.min(1, (735 - 110) / (contentEnd - 110));
     pdf.saveGraphicsState();
-    pdf.setCurrentTransformationMatrix(new pdf.Matrix(scale, 0, 0, scale,
+    pdf.setCurrentTransformationMatrix(pdf.Matrix(scale, 0, 0, scale,
       PAGE.width * (1 - scale) / 2, (PAGE.height - 110) * (1 - scale)));
   }
   let y = 120;
