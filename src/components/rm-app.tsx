@@ -1130,7 +1130,7 @@ function openQuotePdfLegacy(quote: Quote, settings: AppSettings, downloadName?: 
 }
 
 async function openQuotePdf(quote: Quote, settings: AppSettings, downloadName?: string) {
-  const pdf = new jsPDF({ unit: "mm", format: [210, 277], orientation: "portrait" });
+  const pdf = new jsPDF({ unit: "mm", format: [220.85, 291.2], orientation: "portrait" });
   const fonts = await loadFonts();
   pdf.addFileToVFS("QuoteInter-Regular.ttf", fonts[0]);
   pdf.addFont("QuoteInter-Regular.ttf", "QuoteInter", "normal");
@@ -1178,7 +1178,7 @@ async function openQuotePdf(quote: Quote, settings: AppSettings, downloadName?: 
     let minutes = eh * 60 + em - (sh * 60 + sm); if (minutes < 0) minutes += 1440;
     return `${Math.floor(minutes / 60)}h ${minutes % 60}min de voo`;
   };
-  const page = () => { pdf.setFillColor(255, 255, 255); pdf.rect(0, 0, 210, 277, "F"); };
+  const page = () => { pdf.setFillColor(255, 255, 255); pdf.rect(0, 0, 220.85, 291.2, "F"); pdf.setCurrentTransformationMatrix(pdf.Matrix(1, 0, 0, 1, 7 * 72 / 25.4, 0)); };
   const svgMarkupToPng = async (svg: string, width = 480, height = 160) => {
     try {
       const objectUrl = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
@@ -1231,24 +1231,24 @@ async function openQuotePdf(quote: Quote, settings: AppSettings, downloadName?: 
   const landingPng = await svgMarkupToPng('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#0f172a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 22h20M7 10l-4-1-1 2 3 3 14 4a2 2 0 0 0 1-4l-5-1-3-8-2-1v7z"/></svg>', 128, 128);
   const baggagePng = await svgMarkupToPng('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#0f172a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 18H6a2 2 0 0 1-2-2V7a2 2 0 0 0-2-2M17 14V4a2 2 0 0 0-2-2h-1a2 2 0 0 0-2 2v10"/><rect width="13" height="8" x="8" y="6" rx="1"/><circle cx="18" cy="20" r="2"/><circle cx="9" cy="20" r="2"/></svg>', 128, 128);
   page();
-  const traveler = (quote.client.trim().split(/\s+/)[0] || "VIAJANTE").toUpperCase();
+  const traveler = (quote.client.trim().split(/\s+/)[0] || "Viajante");
   const heading = `Sua próxima viagem está aqui, ${traveler}`;
   pdf.setFont("QuoteInter", "bold");
   const headingSize = Math.min(23, 23 * 195 / (pdf.setFontSize(23).getTextWidth(heading) || 1));
   pdf.setFontSize(headingSize);
-  let headingX = (210 - pdf.getTextWidth(heading)) / 2;
+  let headingX = (206.85 - pdf.getTextWidth(heading)) / 2;
   Array.from(heading).forEach((letter, index) => {
     const ratio = index / Math.max(1, heading.length - 1);
-    text(letter, headingX, 26.25, headingSize, [Math.round(79 * (1 - ratio)), Math.round(70 + 32 * ratio), Math.round(229 + 26 * ratio)], "bold");
+    text(letter, headingX, 7.35, headingSize, [Math.round(79 * (1 - ratio)), Math.round(70 + 32 * ratio), Math.round(229 + 26 * ratio)], "bold");
     headingX += pdf.getTextWidth(letter);
   });
-  const destination = (quote.destination || "DESTINO A CONFIRMAR").toUpperCase();
+  const destination = (quote.destination || "Destino a confirmar");
   pdf.setFont("QuoteInter", "normal"); pdf.setFontSize(11);
   const destinationWidth = pdf.getTextWidth(destination);
-  const destinationX = (210 - destinationWidth - 8) / 2;
-  if (planePng) pdf.addImage(planePng, "PNG", destinationX, 32.4, 4.9, 4.9);
-  text(destination, destinationX + 8, 36.05, 11);
-  center(dateRange(), 105, 42.7, 8.5, muted);
+  const destinationX = (206.85 - destinationWidth - 8) / 2;
+  if (planePng) pdf.addImage(planePng, "PNG", destinationX, 13.5, 4.9, 4.9);
+  text(destination, destinationX + 8, 17.15, 11);
+  center(dateRange(), 103.425, 23.8, 8.5, muted);
 
   // Soft shadow is confined to the agency panel, as in the supplied reference.
   const shadow = document.createElement("canvas"); shadow.width = 1260; shadow.height = 420;
@@ -1256,35 +1256,44 @@ async function openQuotePdf(quote: Quote, settings: AppSettings, downloadName?: 
   if (shadowContext) {
     shadowContext.shadowColor = "rgba(0,0,0,0.12)"; shadowContext.shadowBlur = 65; shadowContext.shadowOffsetY = 26;
     shadowContext.fillStyle = "white"; shadowContext.beginPath(); shadowContext.roundRect(30, 70, 1170, 200, 32); shadowContext.fill();
-    pdf.addImage(shadow.toDataURL("image/png"), "PNG", -5.25, 42, 220.5, 73.5);
+    pdf.addImage(shadow.toDataURL("image/png"), "PNG", -5.25, 23.1, 220.5, 73.5);
   }
-  pdf.setFillColor(255,255,255); pdf.roundedRect(0.35, 54.25, contentWidth, 35, 5.6, 5.6, "F");
+  pdf.setFillColor(255,255,255); pdf.roundedRect(0.35, 35.35, contentWidth, 35, 5.6, 5.6, "F");
   if (agencyLogo) {
-    pdf.saveGraphicsState(); pdf.roundedRect(3.85, 58.1, 28, 28, 5, 5, null); pdf.clip(); pdf.discardPath();
-    addContainedPdfImage(pdf, agencyLogo, 3.85, 58.1, 28, 28); pdf.restoreGraphicsState();
+    pdf.saveGraphicsState(); pdf.roundedRect(3.85, 39.2, 28, 28, 5, 5, null); pdf.clip(); pdf.discardPath();
+    addContainedPdfImage(pdf, agencyLogo, 3.85, 39.2, 28, 28); pdf.restoreGraphicsState();
   }
-  text("Somos a", 37.1, 62.65, 8.5, muted);
-  text(settings.companyName || "RM Partiu Viagens", 37.1, 67.9, 11.5, ink, "bold");
+  text("Somos a", 37.1, 43.75, 8.5, muted);
+  text(settings.companyName || "RM Partiu Viagens", 37.1, 49, 11.5, ink, "bold");
   pdf.setFontSize(7.8);
   const agencyAddress = pdf.splitTextToSize(settings.address || "Endereço da agência", 110) as string[];
-  agencyAddress.slice(0, 2).forEach((line, index) => text(line, 37.1, 73.5 + index * 4.2, 7.8, muted));
-  if (instagramPng && settings.instagram) pdf.addImage(instagramPng, "PNG", 37.1, 80.5, 3.5, 3.5);
-  text(settings.instagram || "", 42.35, 83.3, 7.5, muted);
-  if (settings.document) text(settings.document, 100, 83.3, 7.2, muted, "normal", { maxWidth: 48 });
-  text("Você está sendo atendido por", 155.4, 63.7, 8.5, muted);
-  text(settings.contactName || "Seu consultor", 155.4, 67.9, 10, ink, "normal", { maxWidth: 47 });
-  text("Precisa de ajuda?", 155.4, 74.9, 8.5, muted);
-  text(settings.contactPhone || "", 155.4, 79.1, 10, ink);
-  text(settings.contactEmail || "", 155.4, 82.6, 7.7, ink, "normal", { maxWidth: 47 });
+  agencyAddress.slice(0, 2).forEach((line, index) => text(line, 37.1, 54.6 + index * 4.2, 7.8, muted));
+  if (instagramPng && settings.instagram) pdf.addImage(instagramPng, "PNG", 37.1, 61.6, 3.5, 3.5);
+  text(settings.instagram || "", 42.35, 64.4, 7.5, muted);
+  if (settings.document) text(settings.document, 100, 64.4, 7.2, muted, "normal", { maxWidth: 48 });
+  text("Você está sendo atendido por", 155.4, 44.8, 8.5, muted);
+  text(settings.contactName || "Seu consultor", 155.4, 49, 10, ink, "normal", { maxWidth: 47 });
+  text("Precisa de ajuda?", 155.4, 56, 8.5, muted);
+  text(settings.contactPhone || "", 155.4, 60.2, 10, ink);
+  text(settings.contactEmail || "", 155.4, 63.7, 7.7, ink, "normal", { maxWidth: 47 });
 
-  let y = 105.7;
+  const generatedOn = new Date().toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo", day: "numeric", month: "long", year: "numeric" });
+  text(generatedOn, 3.85, 87.5, 8.5, muted);
+  text("Orçamento da sua viagem", 3.85, 91.7, 9.5, ink);
+  if (quote.showValues) {
+    text(money(quote.cashPrice), 201.6, 87.5, 16, ink, "bold", { align: "right" });
+    const installment = installmentCalculation(quote.cashPrice, quote.installments);
+    if (installment) text(`${installment.installments}x de ${money(installment.installmentValue)}`, 201.6, 94.15, 11.5, ink, "bold", { align: "right" });
+  }
+
+  let y = 112;
   if (planePng) pdf.addImage(planePng, "PNG", margin, y - 5.3, 7.7, 7.7);
-  text("Voos", 11.55, y, 13, ink, "bold"); y = 111.3;
-  const ensureSpace = (height: number) => { if (y + height <= 273.5) return; pdf.addPage(); page(); y = 12; };
+  text("Voos", 11.55, y, 13, ink, "bold"); y = 117.6;
+  const ensureSpace = (height: number) => { if (y + height <= 287) return; pdf.addPage(); page(); y = 12; };
   const renderFlight = (flight: Flight, title: string) => {
-    ensureSpace(78.4);
+    ensureSpace(82.25);
     const isOutbound = title.startsWith("Ida");
-    card(margin, y, contentWidth, 78.4, 5);
+    card(margin, y, contentWidth, 82.25, 5);
     const logo = airlineLogos.get(flight.airline);
     if (!logo || !addContainedPdfImage(pdf, logo, 14, y + 10.5, 28.7, 8.4)) center((flight.airline || "Companhia aérea").toUpperCase(), 28, y + 18, 12, ink, "bold", 34);
     if (takeoffPng) pdf.addImage(takeoffPng, "PNG", 65.1, y + 8.4, 5.25, 5.25);
@@ -1305,17 +1314,30 @@ async function openQuotePdf(quote: Quote, settings: AppSettings, downloadName?: 
     center(duration(flight, timeZones), 102.55, y + 38.85, 7.5, ink, "normal", 39);
     center(flight.arriveTime || "--:--", 160.65, y + 35.35, 11, ink, "bold");
     center(`${airportCode(flight.to)} em ${airportName(flight.to)}`, 160.65, y + 39.55, 8.5, muted, "normal", 63);
-    pdf.line(7.7, y + 44.8, 198.1, y + 44.8);
-    text("O que está incluso?", 7.7, y + 56.7, 9.5, ink, "bold");
-    if (baggagePng) pdf.addImage(baggagePng, "PNG", 57.75, y + 51.8, 7.7, 7.7);
-    text(String(flight.checkedBags), 87.85, y + 58.45, 23, ink, "bold", { align: "right" });
-    text(`bagagem\ndespachada (${flight.checkedBagWeight || 0}kg)`, 90.65, y + 54.6, 7.5, ink, "normal", { lineHeightFactor: 1.6 });
-    text(String(flight.carryOnBags), 138.25, y + 58.45, 23, ink, "bold", { align: "right" });
-    text(`bagagem\nde bordo (${flight.carryOnWeight || 0}kg)`, 141.05, y + 54.6, 7.5, ink, "normal", { lineHeightFactor: 1.6 });
-    text(String(flight.backpacks), 183.75, y + 58.45, 23, ink, "bold", { align: "right" });
-    text("mochila\nou bolsa", 186.55, y + 54.6, 7.5, ink, "normal", { lineHeightFactor: 1.6 });
-    text(`Esta reserva ${flight.refundable ? "é" : "não é"} reembolsável`, 7.7, y + 70, 9.5, muted);
-    y += 81.55;
+    const travelDate = flight.date || (isOutbound ? quote.startDate : quote.endDate);
+    const arrivalDate = flight.arrivalDate || flightArrivalDateTime({ ...flight, date: travelDate })?.toLocaleDateString("en-CA") || travelDate;
+    const dateAndZone = (date: string, airport: string) => {
+      const short = date ? date.slice(8, 10) + "/" + date.slice(5, 7) : "";
+      const zone = timeZones?.[airportCode(airport)];
+      if (!zone || !date) return short;
+      try {
+        const offset = new Intl.DateTimeFormat("en-US", { timeZone: zone, timeZoneName: "shortOffset" }).formatToParts(new Date(date + "T12:00:00Z")).find(part => part.type === "timeZoneName")?.value;
+        return [short, offset].filter(Boolean).join(", ");
+      } catch { return short; }
+    };
+    center(dateAndZone(travelDate, flight.from), 44.8, y + 42.7, 6.3, muted);
+    center(dateAndZone(arrivalDate, flight.to), 160.65, y + 42.7, 6.3, muted);
+    pdf.line(7.7, y + 48.65, 198.1, y + 48.65);
+    text("O que está incluso?", 7.7, y + 60.55, 9.5, ink, "bold");
+    if (baggagePng) pdf.addImage(baggagePng, "PNG", 57.75, y + 55.65, 7.7, 7.7);
+    text(String(flight.checkedBags), 87.85, y + 62.3, 23, ink, "bold", { align: "right" });
+    text(`bagagem\ndespachada (${flight.checkedBagWeight || 0}kg)`, 90.65, y + 58.45, 7.5, ink, "normal", { lineHeightFactor: 1.6 });
+    text(String(flight.carryOnBags), 138.25, y + 62.3, 23, ink, "bold", { align: "right" });
+    text(`bagagem\nde bordo (${flight.carryOnWeight || 0}kg)`, 141.05, y + 58.45, 7.5, ink, "normal", { lineHeightFactor: 1.6 });
+    text(String(flight.backpacks), 183.75, y + 62.3, 23, ink, "bold", { align: "right" });
+    text("mochila\nou bolsa", 186.55, y + 58.45, 7.5, ink, "normal", { lineHeightFactor: 1.6 });
+    text(`Esta reserva ${flight.refundable ? "é" : "não é"} reembolsável`, 7.7, y + 73.85, 9.5, muted);
+    y += 85.4;
   };
   const hasFlight = (flight: Flight) => Boolean(flight.code || flight.from || flight.to || flight.date);
   const outboundFlights = [quote.flightOut, ...(quote.flightOutSegments ?? [])];
@@ -1344,7 +1366,7 @@ async function openQuotePdf(quote: Quote, settings: AppSettings, downloadName?: 
     const wrapped: string[] = [];
     blocks.forEach((block, index) => { if (index) wrapped.push(""); block.split("\n").forEach((lineValue) => wrapped.push(...(pdf.splitTextToSize(lineValue, 180) as string[]))); });
     for (let offset = 0; offset < wrapped.length;) {
-      const count = Math.max(1, Math.floor((273.5 - y - 12) / 4.4));
+      const count = Math.max(1, Math.floor((287 - y - 12) / 4.4));
       const lines = wrapped.slice(offset, offset + count);
       const boxHeight = Math.max(20, 12 + lines.length * 4.4);
       card(margin, y, contentWidth, boxHeight, 4);
