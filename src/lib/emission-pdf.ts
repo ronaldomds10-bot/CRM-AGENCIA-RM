@@ -37,7 +37,7 @@ const ICONS = {
 };
 
 let fontFiles: Promise<string[]> | undefined;
-function loadFonts() {
+export function loadFonts() {
   if (!fontFiles) fontFiles = Promise.all(["Regular", "Medium", "SemiBold"].map(async (weight) => {
     const response = await fetch(`/fonts/inter/Inter-${weight}.ttf`);
     if (!response.ok) throw new Error("Não foi possível carregar a fonte do PDF. Tente novamente.");
