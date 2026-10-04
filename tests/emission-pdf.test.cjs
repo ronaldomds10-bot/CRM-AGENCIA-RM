@@ -56,6 +56,7 @@ test("PDF de emissões: formato, fusos, conteúdo, links e paginação", async (
   });
   await t.test("nomes longos e 25 passageiros não são cortados nas páginas", async () => {
     const data = booking();
+    data.flightOutSegments = [{ ...flight, code: "LA3000" }];
     data.flightOut.passengers = Array.from({ length: 25 }, (_, i) => ({ ...passenger, name: `Viajante ${i + 1}`, surname: "Sobrenome extenso para verificar as quebras de linha do cartão", ticket: `BILHETE${i}` }));
     const pdf = await createPdf(data, settings);
     assert.ok(pdf.getNumberOfPages() > 1);
@@ -70,6 +71,25 @@ test("PDF de emissões: formato, fusos, conteúdo, links e paginação", async (
     for (let i = 0; i < 25; i++) assert.ok(text.includes(`BILHETE${i}`));
     assert.ok(text.includes("Passageiros (continuação)"));
     assert.ok(text.includes("LA2000"));
+  });
+  await t.test("ida e volta com vários passageiros ficam juntas em uma página", async () => {
+    for (const count of [3, 4, 9, 25]) {
+      const data = booking();
+      const passengers = Array.from({ length: count }, (_, i) => ({ ...passenger, surname: "Sobrenome extenso para conferir a paginação", ticket: `TESTE${i}` }));
+      data.flightOut.passengers = passengers;
+      data.flightBack.passengers = passengers;
+      const pdf = await createPdf(data, settings);
+      assert.equal(pdf.getNumberOfPages(), 1);
+      const { text } = await parsePdf(Buffer.from(pdf.output("arraybuffer")), { pagerender: async (page) => {
+        const { items } = await page.getTextContent();
+        for (const item of items.filter((item) => item.str.trim())) {
+          assert.ok(item.transform[5] >= 35 && item.transform[5] <= 750, `Conteúdo cortado: ${item.str}`);
+        }
+        return items.map((item) => item.str).join("\n");
+      } });
+      assert.ok(text.includes("LA1000") && text.includes("LA2000"));
+      assert.equal(text.split(`TESTE${count - 1}`).length - 1, 2);
+    }
   });
   await t.test("voo noturno, classe e conexão preservam os dados cadastrados", async () => {
     const data = booking();

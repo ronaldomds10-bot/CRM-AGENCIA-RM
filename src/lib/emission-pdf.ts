@@ -145,6 +145,33 @@ export async function createEmissionPdf(emission: Emission, settings: Settings):
     }
   };
   header();
+  const layouts = flights.map(({ flight }) => {
+    const fallbackPassenger = { name: emission.client.trim().split(/\s+/)[0] || "Passageiro", surname: emission.client.trim().split(/\s+/).slice(1).join(" "), ticket: emission.issue.ticket, checkedBags: flight.checkedBags, carryOnBags: flight.carryOnBags, backpacks: flight.backpacks };
+    const passengers = flight.passengers.length ? flight.passengers.map((passenger) => passenger.name.trim() || passenger.surname.trim() ? passenger : { ...passenger, name: fallbackPassenger.name, surname: fallbackPassenger.surname }) : [fallbackPassenger];
+    const rowHeights: number[] = [];
+    for (let index = 0; index < passengers.length; index += 3) {
+      rowHeights.push(Math.max(...passengers.slice(index, index + 3).map((p) => {
+        pdf.setFont("Inter", "semibold"); pdf.setFontSize(9);
+        const surnameLines = (pdf.splitTextToSize(p.surname || "", 127.5) as string[]).length;
+        pdf.setFont("Inter", "normal"); pdf.setFontSize(7.5);
+        const nameLines = (pdf.splitTextToSize(p.name || "Passageiro", 127.5) as string[]).length;
+        return 95.25 + Math.max(0, surnameLines - 1) * 11.25 + Math.max(0, nameLines - 1) * 10;
+      })));
+    }
+    return { passengers, rowHeights };
+  });
+  const keepRoundTripTogether = flights.length === 2 && flights[0].direction === "ida" && flights[1].direction === "volta";
+  if (keepRoundTripTogether) {
+    // Preserve the reference at 100% when it fits; fit longer bookings as one
+    // proportional group below the unchanged logo, locators and clickable QR.
+    const contentEnd = 120 + layouts.reduce((height, { rowHeights }, index) =>
+      height + (index ? 162.75 : 163.5) + rowHeights.reduce((a, b) => a + b, 0)
+      + (rowHeights.length - 1) * 7.5 + 15.75 + 51, 0) - 51 + 6;
+    const scale = Math.min(1, (735 - 110) / (contentEnd - 110));
+    pdf.saveGraphicsState();
+    pdf.setCurrentTransformationMatrix(new pdf.Matrix(scale, 0, 0, scale,
+      PAGE.width * (1 - scale) / 2, (PAGE.height - 110) * (1 - scale)));
+  }
   let y = 120;
   const nextPage = () => { pdf.addPage([PAGE.width, PAGE.height]); header(); y = 120; };
   const bottom = 735;
@@ -191,18 +218,7 @@ export async function createEmissionPdf(emission: Emission, settings: Settings):
   for (let flightIndex = 0; flightIndex < flights.length; flightIndex++) {
     const { flight, direction, fallback } = flights[flightIndex], date = flight.date || fallback;
     const timing = schedule(flight, date);
-    const fallbackPassenger = { name: emission.client.trim().split(/\s+/)[0] || "Passageiro", surname: emission.client.trim().split(/\s+/).slice(1).join(" "), ticket: emission.issue.ticket, checkedBags: flight.checkedBags, carryOnBags: flight.carryOnBags, backpacks: flight.backpacks };
-    const passengers = flight.passengers.length ? flight.passengers.map((passenger) => passenger.name.trim() || passenger.surname.trim() ? passenger : { ...passenger, name: fallbackPassenger.name, surname: fallbackPassenger.surname }) : [fallbackPassenger];
-    const rowHeights: number[] = [];
-    for (let index = 0; index < passengers.length; index += 3) {
-      rowHeights.push(Math.max(...passengers.slice(index, index + 3).map((p) => {
-        pdf.setFont("Inter", "semibold"); pdf.setFontSize(9);
-        const surnameLines = (pdf.splitTextToSize(p.surname || "", 127.5) as string[]).length;
-        pdf.setFont("Inter", "normal"); pdf.setFontSize(7.5);
-        const nameLines = (pdf.splitTextToSize(p.name || "Passageiro", 127.5) as string[]).length;
-        return 95.25 + Math.max(0, surnameLines - 1) * 11.25 + Math.max(0, nameLines - 1) * 10;
-      })));
-    }
+    const { passengers, rowHeights } = layouts[flightIndex];
     const totalHeight = 179.25 + rowHeights.reduce((a, b) => a + b, 0) + (rowHeights.length - 1) * 7.5;
     const previous = flights[flightIndex - 1];
     let connection = "";
@@ -211,7 +227,7 @@ export async function createEmissionPdf(emission: Emission, settings: Settings):
       const minutes = (Date.parse(`${date}T${flight.departTime}:00Z`) - Date.parse(`${previousArrival}T${previous.flight.arriveTime}:00Z`)) / 60000;
       connection = Number.isFinite(minutes) && minutes >= 0 ? `Parada de ${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, "0")}min` : "Tempo de parada a confirmar";
     }
-    const newPage = y + Math.min(totalHeight, 179.25 + rowHeights[0]) > bottom;
+    const newPage = !keepRoundTripTogether && y + Math.min(totalHeight, 179.25 + rowHeights[0]) > bottom;
     if (newPage) nextPage();
     else if (flightIndex && !connection) line(PAGE.margin, y - 24.75, PAGE.right, y - 24.75, "#e2e8f0");
     if (connection) text(connection, PAGE.width / 2, y - 20, 6, MUTED, "medium", "center");
@@ -256,11 +272,11 @@ export async function createEmissionPdf(emission: Emission, settings: Settings):
     text("Passageiros", PAGE.margin, y + passengerOffset - 10.5, 9, GRAY, "semibold");
     y += passengerOffset;
     rowHeights.forEach((height, row) => {
-      if (y + height + 16 > bottom) { nextPage(); text("Passageiros (continuação)", PAGE.margin, y, 9, GRAY, "semibold"); y += 10.5; }
+      if (!keepRoundTripTogether && y + height + 16 > bottom) { nextPage(); text("Passageiros (continuação)", PAGE.margin, y, 9, GRAY, "semibold"); y += 10.5; }
       passengers.slice(row * 3, row * 3 + 3).forEach((passenger, column) => drawPassenger(passenger, PAGE.margin + column * 148.5, y, height));
       y += height + (row < rowHeights.length - 1 ? 7.5 : 0);
     });
-    if (y + 21 > bottom) { nextPage(); }
+    if (!keepRoundTripTogether && y + 21 > bottom) { nextPage(); }
     const legendY = y + 15.75;
     const legends: [Icon, string, number, number][] = [
       ["checked", `Bagagens despachadas (${flight.checkedBagWeight ?? 23}kg)`, 32.25, 48.125],
@@ -270,5 +286,6 @@ export async function createEmissionPdf(emission: Emission, settings: Settings):
     legends.forEach(([name, label, x, tx]) => { icon(name, x, legendY - 8.25, 12, BLUE); text(label, tx, legendY, 6.75); });
     y = legendY + 51;
   }
+  if (keepRoundTripTogether) pdf.restoreGraphicsState();
   return pdf;
 }
