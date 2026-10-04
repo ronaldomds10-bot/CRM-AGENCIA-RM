@@ -320,6 +320,14 @@ textarea::placeholder {
 .time-input-wrap > span { position: absolute; top: 50%; right: .65rem; color: #79a5cc; font-size: .7rem; font-weight: 800; pointer-events: none; transform: translateY(-50%); }
 .airport-input-wrap { position: relative; }
 .airport-input-wrap:focus-within { z-index: 45; }
+.airport-select-trigger { width: 100%; text-align: left; cursor: pointer; }
+.airport-select-trigger[aria-expanded="true"] { background: #1e293b; }
+.airport-suggestions.airport-search-popover { width: 100%; max-width: 100%; border-radius: 4px; }
+.airport-search-field { display: flex; align-items: center; gap: .45rem; padding: .5rem .65rem; border-bottom: 1px solid #29445f; color: #94a3b8; }
+.airport-search-field input { width: 100%; min-width: 0; padding: 0; border: 0; outline: 0; background: transparent; color: #eaf4ff; font-size: .8rem; }
+.airport-search-field:focus-within { box-shadow: inset 0 0 0 1px #7ca4cc; }
+.airport-search-status { margin: 0; padding: .75rem; text-align: center; color: #94a3b8; font-size: .75rem; }
+.flight-airport-input > .airport-input-wrap { flex: 1; min-width: 0; }
 .airport-suggestions {
   position: absolute;
   z-index: 40;

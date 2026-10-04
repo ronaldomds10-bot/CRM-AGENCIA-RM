@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { jsPDF } from "jspdf";
 import QRCode from "qrcode";
 import { parseFlightPrint } from "@/lib/flight-print";
@@ -5144,13 +5144,7 @@ function IssueImportModal({
             <Field label="Aeroporto de partida">
               <div className="flight-airport-input">
                 <PlaneSparkIcon />
-                <input
-                  value={departureAirport}
-                  onChange={(e) => setDepartureAirport(e.target.value.toUpperCase().slice(0, 3))}
-                  placeholder="Aeroporto (IATA)"
-                  aria-label="Aeroporto de partida (IATA)"
-                  maxLength={3}
-                />
+                <AirportInput value={departureAirport} onChange={(airport) => setDepartureAirport(airport.split(" - ")[0])} placeholder="Aeroporto de partida (IATA)" />
               </div>
             </Field>
             <button
@@ -6870,77 +6864,62 @@ function ChevronLeftIcon() {
 function ChevronRightIcon() {
   return <svg aria-hidden="true" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6" /></svg>;
 }
-function AirportInput({
-  value,
-  onChange,
-  placeholder = "Digite IATA, cidade ou aeroporto",
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  placeholder?: string;
+function AirportInput({ value, onChange, placeholder = "Selecione o aeroporto" }: {
+  value: string; onChange: (value: string) => void; placeholder?: string;
 }) {
   const [airports, setAirports] = useState<Airport[]>(airportCache ?? []);
-  const [focused, setFocused] = useState(false);
-
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const listId = useId();
+  const close = () => { setOpen(false); trigger.current?.focus(); };
   useEffect(() => {
-    if (airportCache) return;
+    if (!open) return;
+    const outside = (event: PointerEvent) => { if (!root.current?.contains(event.target as Node)) setOpen(false); };
+    document.addEventListener("pointerdown", outside);
+    return () => document.removeEventListener("pointerdown", outside);
+  }, [open]);
+  useEffect(() => {
+    if (!open) return;
+    if (airportCache) { setAirports(airportCache); setLoading(false); setError(false); return; }
+    let active = true;
+    setLoading(true); setError(false);
     fetch("/airports.json")
-      .then((response) => response.json())
-      .then((items: Airport[]) => {
-        airportCache = items;
-        setAirports(items);
-      })
-      .catch(() => setAirports([]));
-  }, []);
-
-  const query = value.trim().toLocaleLowerCase("pt-BR");
-  const suggestions = query.length
-    ? airports
-        .filter((airport) =>
-          `${airport.i} ${airport.c} ${airport.n} ${airport.p}`
-            .toLocaleLowerCase("pt-BR")
-            .includes(query),
-        )
-        .sort((a, b) => Number(b.i.toLowerCase().startsWith(query)) - Number(a.i.toLowerCase().startsWith(query)))
-        .slice(0, 8)
-    : [];
-
-  return (
-    <div className="airport-input-wrap">
-      <input
-        className="input"
-        autoComplete="off"
-        placeholder={placeholder}
-        value={value}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
-        onChange={(event) => onChange(event.target.value)}
-      />
-      {focused && suggestions.length ? (
-        <div className="airport-suggestions" role="listbox">
-          {suggestions.map((airport) => (
-            <button
-              key={`${airport.i}-${airport.n}`}
-              type="button"
-              role="option"
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => {
-                onChange(`${airport.i} - ${airport.c}, ${airport.p}`);
-                setFocused(false);
-              }}
-            >
-              <strong>{airport.i}</strong>
-              <span className="airport-option-copy">
-                <b>{airport.c}, {airport.p}</b>
-                <small>{airport.n}</small>
-              </span>
-            </button>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
+      .then(response => { if (!response.ok) throw new Error("Airports unavailable"); return response.json() as Promise<Airport[]>; })
+      .then(items => { airportCache = items; if (active) setAirports(items); })
+      .catch(() => { if (active) setError(true); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [open]);
+  const query = search.trim().toLocaleLowerCase("pt-BR");
+  const suggestions = query.length >= 3 ? airports
+    .filter(airport => (airport.i + " " + airport.c + " " + airport.n + " " + airport.p).toLocaleLowerCase("pt-BR").includes(query))
+    .sort((a, b) => Number(b.i.toLowerCase() === query) - Number(a.i.toLowerCase() === query))
+    .slice(0, 8) : [];
+  const select = (airport: Airport) => { onChange(airport.i + " - " + airport.c + ", " + airport.p); close(); };
+  return <div className="airport-input-wrap" ref={root}
+    onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false); }}
+    onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close(); } }}>
+    <button ref={trigger} type="button" className="input airport-select-trigger" aria-expanded={open} aria-haspopup="listbox" aria-controls={open ? listId : undefined}
+      onClick={() => { setSearch(""); setOpen(current => !current); }}>{value || placeholder}</button>
+    {open ? <div className="airport-suggestions airport-search-popover">
+      <div className="airport-search-field"><span aria-hidden="true">⌕</span><input autoFocus autoComplete="off" aria-label="Pesquisar aeroporto por IATA" placeholder="Pesquisar" value={search}
+        onChange={event => setSearch(event.target.value)} onKeyDown={event => {
+          if (event.key === "Enter") { event.preventDefault(); if (suggestions[0]) select(suggestions[0]); }
+          if (event.key === "ArrowDown") { event.preventDefault(); root.current?.querySelector<HTMLButtonElement>('[role="option"]')?.focus(); }
+        }} /></div>
+      <div role="listbox" id={listId} aria-label="Aeroportos cadastrados">
+        {suggestions.map(airport => <button key={airport.i + airport.n} type="button" role="option" aria-selected={value.startsWith(airport.i + " - ") || value === airport.i}
+          onClick={() => select(airport)}><strong>{airport.i}</strong><span className="airport-option-copy"><b>{airport.c}, {airport.p}</b><small>{airport.n}</small></span></button>)}
+      </div>
+      {!suggestions.length ? <p className="airport-search-status" role="status">{query.length < 3 ? "Digite pelo menos 3 letras" : loading ? "Carregando aeroportos..." : error ? "Não foi possível carregar os aeroportos. Feche e tente novamente." : "Nenhum aeroporto encontrado"}</p> : null}
+    </div> : null}
+  </div>;
 }
+
 function CurrencyInput({
   value,
   onChange,
