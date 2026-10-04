@@ -53,6 +53,8 @@ async function createHolidaySchema() {
       END IF;
     END $$;
     DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='holidays_type_canonical_check') THEN ALTER TABLE holidays ADD CONSTRAINT holidays_type_canonical_check CHECK (type IN ('NATIONAL','STATE','MUNICIPAL','OPTIONAL')); END IF; END $$;
+    DELETE FROM holidays WHERE date < '2026-10-01' OR date > '2027-12-31';
+    DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='holidays_supported_dates_check') THEN ALTER TABLE holidays ADD CONSTRAINT holidays_supported_dates_check CHECK (date BETWEEN '2026-10-01' AND '2027-12-31'); END IF; END $$;
   `);
 }
 
@@ -71,7 +73,8 @@ async function insertMunicipalities() {
 
 async function insertHolidays(rows: HolidaySeed[]) {
   let imported = 0;
-  const uniqueRows = [...new Map(rows.map((row) => [holidayId(row), row])).values()];
+  // Keep the full 2026 source for 2027 projections, but only import supported dates.
+  const uniqueRows = [...new Map(rows.filter((row) => row.date >= "2026-10-01" && row.date <= "2027-12-31").map((row) => [holidayId(row), row])).values()];
   for (let offset = 0; offset < uniqueRows.length; offset += 500) {
     const chunk = uniqueRows.slice(offset, offset + 500).map((row) => ({
       id: holidayId(row), name: row.name, date: row.date, year: Number(row.date.slice(0, 4)), type: row.type,
@@ -204,7 +207,7 @@ export async function listHolidayOpportunities(user: AuthUser, filters: HolidayF
     const found = await getPool().query(`SELECT ibge_code,city,state FROM municipalities WHERE normalized_city=$1${filters.state ? " AND state=$2" : ""}`, values);
     if (found.rowCount === 1) selectedLocation = found.rows[0];
   }
-  const clauses = ["is_active", "year IN (2026,2027)"]; const values: unknown[] = [];
+  const clauses = ["is_active", "date BETWEEN '2026-10-01' AND '2027-12-31'"]; const values: unknown[] = [];
   const add = (sql: string, value: unknown) => { values.push(value); clauses.push(sql.replace("?", `$${values.length}`)); };
   if (["NATIONAL", "STATE", "MUNICIPAL", "OPTIONAL"].includes(filters.type || "")) add("type=?", filters.type);
   if (["CONFIRMED", "PROJECTED", "MANUAL"].includes(filters.verification || "")) add("verification_status=?", filters.verification);
@@ -259,6 +262,9 @@ export async function clientsForHoliday(user: AuthUser, type: HolidayType, state
 export async function saveManualHoliday(input: Record<string, unknown>) {
   await ensureHolidayData();
   const id = String(input.id || "");
+  if ((!id || input.date) && (typeof input.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(input.date) || input.date < "2026-10-01" || input.date > "2027-12-31")) {
+    throw new Error("Dados do feriado inválidos. A data deve estar entre 01/10/2026 e 31/12/2027.");
+  }
   if (id) {
     await getPool().query(`UPDATE holidays SET name=COALESCE($2,name), date=COALESCE($3::date,date), year=EXTRACT(YEAR FROM COALESCE($3::date,date)), verification_status=COALESCE($4,verification_status), is_active=COALESCE($5,is_active), updated_at=NOW() WHERE id=$1`, [id, input.name || null, input.date || null, input.verificationStatus || null, typeof input.isActive === "boolean" ? input.isActive : null]);
     return;
