@@ -2095,6 +2095,7 @@ export function RMApp() {
           ) : null}
           {view === "dashboard" ? (
             <Dashboard
+              clients={data.clients}
               quotes={data.quotes}
               events={data.events}
               onCreate={createQuote}
@@ -2482,12 +2483,110 @@ function Nav({
     </nav>
   );
 }
+  type AgendaItem = CalendarEvent & {
+    kind: "manual" | "birthday" | "checkin";
+    automatic: boolean;
+    whatsappPhone?: string;
+    whatsappMessage?: string;
+  };
+
+function calendarAutomaticItems(clients: Client[], quotes: Quote[], year: number): AgendaItem[] {
+  const whatsappPhone = (value?: string) => {
+    const digits = value?.replace(/\D/g, "") || "";
+    if (digits.length < 10) return "";
+    return digits.startsWith("55") ? digits : `55${digits}`;
+  };
+  const normalizedName = (value: string) => value.trim().toLocaleLowerCase("pt-BR");
+    const birthdays = clients.flatMap((client) => {
+      const match = client.birthday?.match(/^\d{4}-(\d{2})-(\d{2})$/);
+      if (!match) return [];
+      const date = `${year}-${match[1]}-${match[2]}`;
+      const parsed = new Date(`${date}T12:00:00`);
+      if (Number.isNaN(parsed.getTime()) || parsed.getMonth() + 1 !== Number(match[1])) return [];
+      const givenName = client.name.trim();
+      const surname = client.surname?.trim() || "";
+      const fullName = surname && !normalizedName(givenName).endsWith(normalizedName(surname))
+        ? `${givenName} ${surname}`
+        : givenName;
+      return [{
+        id: `birthday-${client.id}-${year}`,
+        title: `Aniversário de ${fullName}`,
+        date,
+        description: "Não esqueça de enviar os parabéns!",
+        kind: "birthday" as const,
+        automatic: true,
+        whatsappPhone: whatsappPhone(client.phone),
+        whatsappMessage: `Olá, ${client.name}! Feliz aniversário! A RM Partiu Viagens deseja um dia muito especial para você.`,
+      }];
+    });
+    const checkins = quotes.flatMap((quote) => {
+      if (!quote.isIssue || quote.isDemo || (quote.status !== "emitido" && quote.status !== "aguardando")) return [];
+      const legs = [
+        { key: "out", label: "ida", flight: quote.flightOut, fallbackDate: quote.startDate },
+        { key: "back", label: "volta", flight: quote.flightBack, fallbackDate: quote.endDate },
+      ];
+      return legs.flatMap(({ key, label, flight, fallbackDate }) => {
+        const departureDate = flight.date || fallbackDate;
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(departureDate || "")) return [];
+        const checkinDate = new Date(`${departureDate}T12:00:00`);
+        if (Number.isNaN(checkinDate.getTime())) return [];
+        checkinDate.setDate(checkinDate.getDate() - 2);
+        const date = `${checkinDate.getFullYear()}-${String(checkinDate.getMonth() + 1).padStart(2, "0")}-${String(checkinDate.getDate()).padStart(2, "0")}`;
+        const route = [flight.from, flight.to].filter(Boolean).join(" → ") || quote.route || quote.destination;
+        const locator = quote.issue.locator ? ` Localizador: ${quote.issue.locator}.` : "";
+        const departure = departureDate.split("-").reverse().join("/");
+        const time = flight.departTime ? ` às ${flight.departTime}` : "";
+        const client = clients.find((item) =>
+          normalizedName(item.name) === normalizedName(quote.client) ||
+          normalizedName(`${item.name} ${item.surname || ""}`) === normalizedName(quote.client),
+        );
+        return [{
+          id: `checkin-${quote.id}-${key}-${departureDate}`,
+          title: `Check-in de ${quote.client}${route ? ` · ${route}` : ""}`,
+          date,
+          description: `Abra o check-in da viagem de ${label}, com embarque em ${departure}${time}.${locator}`,
+          kind: "checkin" as const,
+          automatic: true,
+          whatsappPhone: whatsappPhone(client?.phone),
+          whatsappMessage: `Olá, ${quote.client}! O check-in da sua viagem de ${label}${route ? ` (${route})` : ""} já está disponível. Embarque em ${departure}${time}.${locator}`,
+        }];
+      });
+    });
+    return [...birthdays, ...checkins];
+}
+
+function dashboardAgenda(clients: Client[], quotes: Quote[], events: CalendarEvent[], completedIds: string[], now: Date): AgendaItem[] {
+  const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 7);
+  const iso = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  const startDate = iso(now);
+  const endDate = iso(end);
+  const automatic = calendarAutomaticItems(clients, quotes, now.getFullYear());
+  if (end.getFullYear() !== now.getFullYear()) {
+    automatic.push(...calendarAutomaticItems(clients, [], end.getFullYear()));
+  }
+  return [
+    ...automatic,
+    ...events.map((event) => ({ ...event, kind: "manual" as const, automatic: false })),
+  ].filter((event) => event.date >= startDate && event.date <= endDate &&
+    !(event.automatic ? completedIds.includes(event.id) : event.completed))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+function upcomingEventLabel(date: string, now: Date): string {
+  const [year, month, day] = date.split("-").map(Number);
+  const days = Math.round((Date.UTC(year, month - 1, day) - Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())) / 86400000);
+  const relative = days === 0 ? "hoje" : days === 1 ? "amanhã" : days === 2 ? "depois de amanhã" : `em ${days} dias`;
+  return `${relative}, ${String(day).padStart(2, "0")}/${String(month).padStart(2, "0")}`;
+}
+
 function Dashboard({
+  clients,
   quotes,
   events,
   onCreate,
   onOpenOpportunities,
 }: {
+  clients: Client[];
   quotes: Quote[];
   events: CalendarEvent[];
   onCreate: () => void;
@@ -2531,10 +2630,15 @@ function Dashboard({
     })
     .sort((a, b) => `${a.flightOut.date || a.startDate}T${a.flightOut.departTime || "00:00"}`.localeCompare(`${b.flightOut.date || b.startDate}T${b.flightOut.departTime || "00:00"}`))
     .slice(0, 3);
-  const upcomingEvents = events
-    .filter((event) => !event.completed)
-    .sort((a, b) => a.date.localeCompare(b.date))
-    .slice(0, 4);
+  const [completedAutomaticIds] = useState<string[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      return JSON.parse(localStorage.getItem("rm-travel-hub-calendar-completed-v1") || "[]") as string[];
+    } catch {
+      return [];
+    }
+  });
+  const upcomingEvents = dashboardAgenda(clients, quotes, events, completedAutomaticIds, now);
   return (
     <div className="grid gap-5">
       <section className="hero-strip">
@@ -2574,8 +2678,12 @@ function Dashboard({
           ))}
         </Panel>
         <Panel title="Seus próximos eventos">
-          {upcomingEvents.map((event) => <TimelineItem key={event.id} icon="□" title={event.title} detail={`${event.date.split("-").reverse().join("/")} · ${event.description || "Sem descrição"}`} />)}
-          {upcomingEvents.length === 0 ? <p className="text-[#9fc8ee]">Nenhum evento pendente.</p> : null}
+          <div className="grid gap-x-3 sm:grid-cols-2">
+            {upcomingEvents.map((event) => (
+              <TimelineItem key={event.id} icon={event.kind === "birthday" ? "🎂" : event.kind === "checkin" ? "✈" : "□"} title={event.title} detail={upcomingEventLabel(event.date, now)} />
+            ))}
+          </div>
+          {upcomingEvents.length === 0 ? <p className="text-[#9fc8ee]">Nenhum evento nos próximos 7 dias.</p> : null}
         </Panel>
       </div>
     </div>
@@ -5742,76 +5850,7 @@ function Calendar({
   }).format(cursor);
   const isoForDay = (day: number) =>
     `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-  type AgendaItem = CalendarEvent & {
-    kind: "manual" | "birthday" | "checkin";
-    automatic: boolean;
-    whatsappPhone?: string;
-    whatsappMessage?: string;
-  };
-  const whatsappPhone = (value?: string) => {
-    const digits = value?.replace(/\D/g, "") || "";
-    if (digits.length < 10) return "";
-    return digits.startsWith("55") ? digits : `55${digits}`;
-  };
-  const normalizedName = (value: string) => value.trim().toLocaleLowerCase("pt-BR");
-  const automaticItems = useMemo<AgendaItem[]>(() => {
-    const birthdays = clients.flatMap((client) => {
-      const match = client.birthday?.match(/^\d{4}-(\d{2})-(\d{2})$/);
-      if (!match) return [];
-      const date = `${year}-${match[1]}-${match[2]}`;
-      const parsed = new Date(`${date}T12:00:00`);
-      if (Number.isNaN(parsed.getTime()) || parsed.getMonth() + 1 !== Number(match[1])) return [];
-      const givenName = client.name.trim();
-      const surname = client.surname?.trim() || "";
-      const fullName = surname && !normalizedName(givenName).endsWith(normalizedName(surname))
-        ? `${givenName} ${surname}`
-        : givenName;
-      return [{
-        id: `birthday-${client.id}-${year}`,
-        title: `Aniversário de ${fullName}`,
-        date,
-        description: "Não esqueça de enviar os parabéns!",
-        kind: "birthday" as const,
-        automatic: true,
-        whatsappPhone: whatsappPhone(client.phone),
-        whatsappMessage: `Olá, ${client.name}! Feliz aniversário! A RM Partiu Viagens deseja um dia muito especial para você.`,
-      }];
-    });
-    const checkins = quotes.flatMap((quote) => {
-      if (!quote.isIssue || quote.isDemo || (quote.status !== "emitido" && quote.status !== "aguardando")) return [];
-      const legs = [
-        { key: "out", label: "ida", flight: quote.flightOut, fallbackDate: quote.startDate },
-        { key: "back", label: "volta", flight: quote.flightBack, fallbackDate: quote.endDate },
-      ];
-      return legs.flatMap(({ key, label, flight, fallbackDate }) => {
-        const departureDate = flight.date || fallbackDate;
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(departureDate || "")) return [];
-        const checkinDate = new Date(`${departureDate}T12:00:00`);
-        if (Number.isNaN(checkinDate.getTime())) return [];
-        checkinDate.setDate(checkinDate.getDate() - 2);
-        const date = `${checkinDate.getFullYear()}-${String(checkinDate.getMonth() + 1).padStart(2, "0")}-${String(checkinDate.getDate()).padStart(2, "0")}`;
-        const route = [flight.from, flight.to].filter(Boolean).join(" → ") || quote.route || quote.destination;
-        const locator = quote.issue.locator ? ` Localizador: ${quote.issue.locator}.` : "";
-        const departure = departureDate.split("-").reverse().join("/");
-        const time = flight.departTime ? ` às ${flight.departTime}` : "";
-        const client = clients.find((item) =>
-          normalizedName(item.name) === normalizedName(quote.client) ||
-          normalizedName(`${item.name} ${item.surname || ""}`) === normalizedName(quote.client),
-        );
-        return [{
-          id: `checkin-${quote.id}-${key}-${departureDate}`,
-          title: `Check-in de ${quote.client}${route ? ` · ${route}` : ""}`,
-          date,
-          description: `Abra o check-in da viagem de ${label}, com embarque em ${departure}${time}.${locator}`,
-          kind: "checkin" as const,
-          automatic: true,
-          whatsappPhone: whatsappPhone(client?.phone),
-          whatsappMessage: `Olá, ${quote.client}! O check-in da sua viagem de ${label}${route ? ` (${route})` : ""} já está disponível. Embarque em ${departure}${time}.${locator}`,
-        }];
-      });
-    });
-    return [...birthdays, ...checkins];
-  }, [clients, quotes, year]);
+  const automaticItems = useMemo(() => calendarAutomaticItems(clients, quotes, year), [clients, quotes, year]);
   const agendaItems: AgendaItem[] = [
     ...automaticItems,
     ...events.map((event) => ({ ...event, kind: "manual" as const, automatic: false })),
