@@ -411,6 +411,8 @@ function mergeImportedClients(clients: Client[]) {
     ]).filter(Boolean),
   );
   const missing = importedClients.filter((client) => {
+    // An edited seed client keeps its ID even when all contact details change.
+    if (seenIds.has(client.id)) return false;
     const keys = [
       client.document ? `document:${normalized(client.document)}` : "",
       client.email ? `email:${normalized(client.email)}` : "",
