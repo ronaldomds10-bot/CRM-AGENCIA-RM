@@ -4941,9 +4941,9 @@ function IssueEditor({
               />
             </SectionBand>
           ) : issue.issueType === "car" ? (
-            <CarsForm quote={issue} onChange={onChange} />
+            <CarsForm quote={issue} onChange={onChange} onImport={() => setQuoteImportOpen(true)} />
           ) : (
-            <HotelsForm quote={issue} onChange={onChange} />
+            <HotelsForm quote={issue} onChange={onChange} onImport={() => setQuoteImportOpen(true)} />
           )}
         </div>
       ) : null}
@@ -5062,6 +5062,7 @@ function IssueEditor({
       {quoteImportOpen ? (
         <QuoteImportModal
           quotes={availableQuotes}
+          description={`Selecione um orçamento para preencher ${issue.issueType === "car" ? "o aluguel de carro" : issue.issueType === "hotel" ? "as hospedagens" : "a passagem aérea"}.`}
           onClose={() => setQuoteImportOpen(false)}
           onImport={(quote) => {
             onChange({
@@ -5072,8 +5073,16 @@ function IssueEditor({
               startDate: quote.startDate,
               endDate: quote.endDate,
               cashPrice: quote.cashPrice,
-              flightOut: normalizeFlight(quote.flightOut),
-              flightBack: normalizeFlight(quote.flightBack),
+              ...(issue.issueType === "car" ? {
+                car: { ...quote.car },
+                carOptions: (quote.carOptions ?? []).map((car) => ({ ...car })),
+              } : issue.issueType === "hotel" ? {
+                hotel: { ...quote.hotel, photoNames: quote.hotel.photoNames?.slice() },
+                hotelOptions: (quote.hotelOptions ?? []).map((hotel) => ({ ...hotel, photoNames: hotel.photoNames?.slice() })),
+              } : {
+                flightOut: normalizeFlight(quote.flightOut),
+                flightBack: normalizeFlight(quote.flightBack),
+              }),
             });
             setQuoteImportOpen(false);
           }}
