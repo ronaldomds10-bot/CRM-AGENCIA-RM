@@ -79,10 +79,11 @@ export async function createEmissionPdf(emission: Emission, settings: Settings):
   ].filter(({ flight }) => flight.code || flight.from || flight.to || flight.date);
   const airlineCode = (flight: Flight) => {
     const name = flight.airline.toUpperCase();
+    if (name.includes("ARAJET")) return "DM";
     return name.includes("LATAM") ? "LA" : name.includes("AZUL") ? "AD" : name.includes("GOL") ? "G3" : flight.code.trim().slice(0, 2).toUpperCase();
   };
   const codes = [...new Set(flights.map(({ flight }) => airlineCode(flight)).filter(Boolean))];
-  const localLogos: Record<string, string> = { LA: "/emission/latam.png", AD: "/airlines/azul.svg", G3: "/airlines/gol.svg" };
+  const localLogos: Record<string, string> = { DM: "/airlines/arajet.png", LA: "/emission/latam.png", AD: "/airlines/azul.svg", G3: "/airlines/gol.svg" };
   const qrValue = emission.qrContent || emission.issue.locatorLink || emission.issue.locator;
   const [fonts, timeZones, logo, airlineImages, qr] = await Promise.all([
     loadFonts(),

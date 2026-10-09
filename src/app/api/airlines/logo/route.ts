@@ -6,6 +6,7 @@ const PUBLIC_AIRLINE_CODES = new Set(["AD", "AA", "AM", "G3", "LA", "KL", "AR", 
 
 export async function GET(request: NextRequest) {
   const code = (request.nextUrl.searchParams.get("code") ?? "").trim().toUpperCase();
+  if (code === "DM") return NextResponse.redirect(new URL("/airlines/arajet.png", request.url));
   if (!PUBLIC_AIRLINE_CODES.has(code)) return NextResponse.json({ error: "Companhia não cadastrada." }, { status: 404 });
   try {
     const response = await fetch(`https://images.kiwi.com/airlines/128/${encodeURIComponent(code)}.png`, {

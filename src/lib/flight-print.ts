@@ -13,6 +13,7 @@ export type PrintFlight = {
 };
 
 const airlineByPrefix: Record<string, string> = {
+  DM: "Arajet",
   LA: "LATAM", AM: "Aeroméxico", AD: "Azul", G3: "GOL", AA: "American Airlines",
   KL: "KLM", AR: "Aerolineas Argentinas", IB: "Iberia", TP: "TAP",
 };

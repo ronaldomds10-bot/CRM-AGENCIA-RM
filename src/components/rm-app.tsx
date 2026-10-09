@@ -56,6 +56,7 @@ type ImportedFlightData = {
 };
 
 const registeredAirlines = [
+  { name: "Arajet", code: "DM" },
   { name: "Azul", code: "AD" },
   { name: "GOL", code: "G3" },
   { name: "LATAM", code: "LA" },
@@ -77,6 +78,7 @@ const registeredAirlineCode = (airline: string, flightCode = "") => {
 };
 const airlineLogoUrl = (airline: string, flightCode = "") => {
   const code = registeredAirlineCode(airline, flightCode);
+  if (code === "DM") return "/airlines/arajet.png";
   return code ? `/api/airlines/logo?code=${encodeURIComponent(code)}` : "";
 };
 
@@ -1198,7 +1200,7 @@ async function openQuotePdf(quote: Quote, settings: AppSettings, downloadName?: 
       return await trimmedPng(await response.blob());
     } catch { return ""; }
   };
-  const localAirlineLogos: Record<string, string> = { AD: "/airlines/azul.svg", G3: "/airlines/gol.svg", LA: "/airlines/latam.svg" };
+  const localAirlineLogos: Record<string, string> = { DM: "/airlines/arajet.png", AD: "/airlines/azul.svg", G3: "/airlines/gol.svg", LA: "/airlines/latam.svg" };
   const airlineLogoData = async (code: string) => {
     const localUrl = localAirlineLogos[code];
     if (localUrl) {
@@ -4228,7 +4230,7 @@ function Issues({
                       : "Hotel";
                 const airlineLogo =
                   q.issueType === "flight"
-                    ? ({ latam: "latam", azul: "azul", gol: "gol" } as const)[
+                    ? registeredAirlineCode(company, q.flightOut.code) === "DM" ? "arajet" : ({ latam: "latam", azul: "azul", gol: "gol" } as const)[
                         company.toLowerCase() as "latam" | "azul" | "gol"
                       ]
                     : undefined;
@@ -4242,7 +4244,7 @@ function Issues({
                         className={`company-pill company-${company.toLowerCase().replaceAll(" ", "-")}`}
                       >
                         {airlineLogo ? (
-                          <img src={`/airlines/${airlineLogo}.svg`} alt={company} />
+                          <img src={`/airlines/${airlineLogo}.${airlineLogo === "arajet" ? "png" : "svg"}`} alt={company} />
                         ) : company}
                       </span>
                     </td>
