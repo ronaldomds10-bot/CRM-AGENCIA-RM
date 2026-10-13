@@ -5791,8 +5791,10 @@ function Finance({
   const quoteRows = quotes.filter((quote) =>
     !quote.isDemo && !quote.isIssue && isInPeriod(quote.createdAt),
   );
-  const sales = financeRows.reduce((sum, quote) => sum + quote.cashPrice, 0);
-  const costs = financeRows.reduce((sum, quote) => sum + issueCost(quote), 0);
+  // Historical Airpass totals supplied for 2026; do not carry them into later years.
+  const includeAirpassHistory = period === "year" && now.getFullYear() === 2026;
+  const sales = financeRows.reduce((sum, quote) => sum + quote.cashPrice, includeAirpassHistory ? 41212.75 : 0);
+  const costs = financeRows.reduce((sum, quote) => sum + issueCost(quote), includeAirpassHistory ? 36519.39 : 0);
   return (
     <div className="grid gap-5">
       <span className="w-max rounded-full border border-[#1c3148] px-4 py-2 text-sm">
