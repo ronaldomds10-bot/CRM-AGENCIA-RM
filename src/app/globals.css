@@ -1921,6 +1921,14 @@ section.rounded-md {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.75rem;
 }
+.mileage-finance { grid-column: 1 / -1; min-width: 0; }
+.mileage-finance label, .mileage-finance details { min-width: 0; overflow-wrap: anywhere; }
+.mileage-finance .input { width: 100%; }
+@media (max-width: 640px) {
+  .issue-editor .issue-sale-grid,
+  .issue-editor .issue-method-fields,
+  .mileage-finance .miles-cost-grid { grid-template-columns: minmax(0, 1fr); }
+}
 .supplier-picker { position: relative; }
 .supplier-picker-trigger { position: relative; }
 .supplier-picker-trigger .input { padding-right: 2.5rem; cursor: pointer; }
