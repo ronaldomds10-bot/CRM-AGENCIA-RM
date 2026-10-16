@@ -4,8 +4,6 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { jsPDF } from "jspdf";
 import QRCode from "qrcode";
 import { parseFlightPrint } from "@/lib/flight-print";
-import { MileageFinanceEditor } from "@/components/mileage-finance";
-import { calculateMileageFinance, type MileageFinance } from "@/lib/mileage-finance";
 import { parseSmilesDocument, returnFlightIndex } from "@/lib/travel-document";
 import { flightDurationMinutes } from "@/lib/flight-duration";
 import { createEmissionPdf, loadFonts } from "@/lib/emission-pdf";
@@ -207,7 +205,6 @@ type IssueAttachment = {
   createdAt: string;
 };
 type IssueDetails = {
-  finance?: MileageFinance;
   locator: string;
   locatorLink: string;
   saleDate: string;
@@ -567,16 +564,12 @@ function installmentPrice(cashPrice: number, installmentOption: string) {
   const calculation = installmentCalculation(cashPrice, installmentOption);
   return calculation ? money(calculation.total) : "";
 }
-function financePending(quote: Quote) {
-  return quote.issue.method === "miles" && !quote.issue.finance;
-}
-function issueRevenue(quote: Quote) {
-  if (financePending(quote)) return 0;
-  return quote.issue.method === "miles" && quote.issue.finance ? calculateMileageFinance(quote.issue.finance).revenue / 100 : quote.cashPrice;
-}
 function issueCost(quote: Quote) {
-  if (financePending(quote)) return 0;
-  return quote.issue.method === "miles" && quote.issue.finance ? calculateMileageFinance(quote.issue.finance).cost / 100 : Number(quote.cost) || 0;
+  if (quote.issue.method !== "miles") return Number(quote.cost) || 0;
+  const points = Number(quote.issue.pointsAmount) || 0;
+  const thousandCost = Number(quote.issue.thousandCost) || 0;
+  const fees = Number(quote.issue.fees) || 0;
+  return (points / 1000) * thousandCost + fees;
 }
 function issueDefaultName(issue: Quote) {
   const client = issue.client.trim();
@@ -1886,7 +1879,7 @@ export function RMApp() {
         !q.isDemo &&
         q.status !== "cancelado",
     );
-    const sales = issued.reduce((sum, q) => sum + issueRevenue(q), 0);
+    const sales = issued.reduce((sum, q) => sum + q.cashPrice, 0);
     const costs = issued.reduce((sum, q) => sum + issueCost(q), 0);
     return {
       sales,
@@ -2629,7 +2622,7 @@ function Dashboard({
   };
   const periodQuotes = quotes.filter((quote) => !isDemoRecord(quote) && !quote.isIssue && inPeriod(quote.createdAt));
   const issued = quotes.filter((quote) => !isDemoRecord(quote) && quote.isIssue && quote.status !== "cancelado" && inPeriod(quote.issue.saleDate || quote.createdAt));
-  const sales = issued.reduce((sum, quote) => sum + issueRevenue(quote), 0);
+  const sales = issued.reduce((sum, quote) => sum + quote.cashPrice, 0);
   const costs = issued.reduce((sum, quote) => sum + issueCost(quote), 0);
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
   const upcomingFlights = quotes
@@ -4354,7 +4347,7 @@ function missingIssueDetails(issue: Quote) {
   const missing: string[] = [];
   if (!issue.issue.locator.trim()) missing.push("localizador");
   if (!issue.client.trim()) missing.push("cliente");
-  if (!(issue.cashPrice > 0) && !(issue.issue.method === "miles" && issue.issue.finance)) missing.push("valor de venda");
+  if (!(issue.cashPrice > 0)) missing.push("valor de venda");
   if (!issue.issue.saleDate.trim()) missing.push("data da venda");
   if (!issue.issue.provider.trim()) {
     missing.push({ miles: "programa de fidelidade", money: "site", consolidator: "consolidadora", concierge: "fornecedor" }[issue.issue.method]);
@@ -4416,7 +4409,7 @@ function IssueEditor({
     }
     onSave();
   };
-  const milesCost = issue.issue.finance ? calculateMileageFinance(issue.issue.finance).cost / 100 : 0;
+  const milesCost = (issue.issue.pointsAmount / 1000) * issue.issue.thousandCost + issue.issue.fees;
   const emissionCost = issue.issue.method === "miles" ? milesCost : issue.cost;
   const profit = issue.cashPrice - emissionCost;
   const updateIssue = (next: Partial<IssueDetails>) =>
@@ -4600,11 +4593,11 @@ function IssueEditor({
                 <small>Selecione o cliente que adquiriu a emissão</small>
               </Field>
               <Field label="Valor de venda">
-                {issue.issue.method === "miles" ? <output className="input">{financePending(issue) ? "Financeiro pendente" : money(issue.cashPrice)}</output> : <CurrencyInput
+                <CurrencyInput
                   value={issue.cashPrice}
                   onChange={(cashPrice) => onChange({ ...issue, cashPrice })}
-                />}
-                <small>{issue.issue.method === "miles" ? "Calculado pelo milheiro de venda e taxa cobrada." : "Informe o valor vendido ao cliente"}</small>
+                />
+                <small>Informe o valor vendido ao cliente</small>
               </Field>
               <SingleDatePicker
                 label="Data da venda"
@@ -4836,10 +4829,34 @@ function IssueEditor({
                     </div>
                     <small>Selecione o fornecedor das milhas</small>
                   </Field>
-                  <MileageFinanceEditor key={issue.id} id={issue.id} value={issue.issue.finance} onChange={(finance) => {
-                    const totals = calculateMileageFinance(finance);
-                    onChange({ ...issue, cashPrice: totals.revenue / 100, cost: totals.cost / 100, issue: { ...issue.issue, finance, pointsAmount: finance.miles, thousandCost: finance.buyCents / 100, fees: finance.paidFeeCents / 100 } });
-                  }} />
+                  <div className="miles-cost-grid">
+                    <Field label="Pontos">
+                      <input
+                        className="input"
+                        type="number"
+                        min="0"
+                        step="1000"
+                        value={issue.issue.pointsAmount || ""}
+                        onChange={(event) => updateMiles({ pointsAmount: Math.max(0, Number(event.target.value)) })}
+                        placeholder="10000"
+                      />
+                      <small>Quantidade de pontos gastos</small>
+                    </Field>
+                    <Field label="Custo do milheiro">
+                      <CurrencyInput
+                        value={issue.issue.thousandCost}
+                        onChange={(thousandCost) => updateMiles({ thousandCost })}
+                      />
+                      <small>Custo de cada 1000 pontos comprados</small>
+                    </Field>
+                    <Field label="Taxas">
+                      <CurrencyInput
+                        value={issue.issue.fees}
+                        onChange={(fees) => updateMiles({ fees })}
+                      />
+                      <small>Gastos com taxas aeroportuárias</small>
+                    </Field>
+                  </div>
                 </>
               ) : (
                 <Field label="Valor">
@@ -4854,9 +4871,9 @@ function IssueEditor({
             <div className={`issue-profit ${profit < 0 ? "issue-profit-negative" : ""}`}>
               <div>
                 <strong>↗ Lucro</strong>
-                <span>{issue.issue.method === "miles" && !issue.issue.finance ? "Financeiro pendente" : money(profit)}</span>
+                <span>{money(profit)}</span>
               </div>
-              <small>{financePending(issue) ? "Preencha os valores totais da emissão." : `Valor da venda ${money(issue.cashPrice)} − custo da emissão ${money(emissionCost)}`}</small>
+              <small>Valor da venda {money(issue.cashPrice)} − custo da emissão {money(emissionCost)}</small>
             </div>
           </Panel>
           <Panel title="Observações">
@@ -5537,7 +5554,7 @@ function ClientModal({
   const [draft, setDraft] = useState(client);
   const profit = quotes
     .filter((q) => q.client === client.name && q.status === "emitido")
-    .reduce((sum, q) => sum + issueRevenue(q) - issueCost(q), 0);
+    .reduce((sum, q) => sum + q.cashPrice - q.cost, 0);
   const commit = () =>
     onSave({
       ...draft,
@@ -5776,7 +5793,7 @@ function Finance({
   );
   // Historical Airpass totals supplied for 2026; do not carry them into later years.
   const includeAirpassHistory = period === "year" && now.getFullYear() === 2026;
-  const sales = financeRows.reduce((sum, quote) => sum + issueRevenue(quote), includeAirpassHistory ? 41212.75 : 0);
+  const sales = financeRows.reduce((sum, quote) => sum + quote.cashPrice, includeAirpassHistory ? 41212.75 : 0);
   const costs = financeRows.reduce((sum, quote) => sum + issueCost(quote), includeAirpassHistory ? 36519.39 : 0);
   return (
     <div className="grid gap-5">
@@ -5798,20 +5815,13 @@ function Finance({
         <Metric title="Orçamentos criados" value={String(quoteRows.length)} />
         <Metric title="Emissões geradas" value={String(financeRows.length)} />
       </div>
-      <p>{financeRows.filter(financePending).length} emissões com financeiro pendente, excluídas dos totais. Cancelamentos seguem o fluxo atual e não entram nos totais.</p>
-      <div className="metric-grid">
-        <Metric title="Receita das milhas" value={money(financeRows.reduce((sum, q) => sum + (q.issue.method === "miles" && q.issue.finance ? calculateMileageFinance(q.issue.finance).milesSale / 100 : 0), 0))} />
-        <Metric title="Custo das milhas" value={money(financeRows.reduce((sum, q) => sum + (q.issue.method === "miles" && q.issue.finance ? calculateMileageFinance(q.issue.finance).milesCost / 100 : 0), 0))} />
-        <Metric title="Taxas pagas (milhas)" value={money(financeRows.reduce((sum, q) => sum + (q.issue.method === "miles" && q.issue.finance ? q.issue.finance.paidFeeCents / 100 : 0), 0))} />
-        <Metric title="Taxas cobradas (milhas)" value={money(financeRows.reduce((sum, q) => sum + (q.issue.method === "miles" && q.issue.finance ? q.issue.finance.chargedFeeCents / 100 : 0), 0))} />
-      </div>
       <Panel title="Movimentações">
         {financeRows.map((q) => (
           <TimelineItem
             key={q.id}
             icon="$"
             title={`${q.client} · ${q.destination}`}
-            detail={financePending(q) ? "Financeiro pendente" : `${money(issueRevenue(q))} · custo ${money(issueCost(q))} · lucro ${money(issueRevenue(q) - issueCost(q))}`}
+            detail={`${money(q.cashPrice)} · lucro ${money(q.cashPrice - issueCost(q))}`}
           />
         ))}
       </Panel>

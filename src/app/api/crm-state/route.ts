@@ -5,7 +5,6 @@ import { mergeState, settingsForUser, visibleState, type StatePayload } from "@/
 import { assignClientIbgeCodes } from "@/lib/holiday-db";
 import { isTrustedMutation, readJsonBody, RequestInputError } from "@/lib/security";
 import { isAgencyManager, stateIdForAgency } from "@/lib/tenant";
-import { validateEmissionFinances } from "@/lib/mileage-finance-server";
 
 export const runtime = "nodejs";
 
@@ -48,7 +47,6 @@ export async function PUT(request: NextRequest) {
       }
       const existing = current.rows[0].payload as StatePayload;
       const merged = await assignClientIbgeCodes(mergeState(existing, data as StatePayload, user));
-      await validateEmissionFinances(client, existing, merged, user.dataAgencyId, user.id);
       const saved = await client.query("UPDATE crm_state SET payload = $2::jsonb, updated_at = NOW() WHERE agency_id = $1 RETURNING updated_at", [user.dataAgencyId, JSON.stringify(merged)]);
       await client.query("COMMIT");
       return NextResponse.json({ ok: true, updatedAt: saved.rows[0].updated_at });

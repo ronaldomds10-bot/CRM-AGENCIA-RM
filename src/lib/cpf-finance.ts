@@ -1,3 +1,4 @@
+// Exclusive to Controle de CPFs. Never read CRM quotes or general finance.
 export type MileageFinance = {
   accountId: string;
   miles: number;

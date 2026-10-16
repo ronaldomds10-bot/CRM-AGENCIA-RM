@@ -64,7 +64,7 @@ export async function GET(request: NextRequest) {
     const agency = actor.dataAgencyId;
     const [accounts, emissions, passengers, beneficiaries, rules] = await Promise.all([
       getPool().query("SELECT id,alias,holder_name,holder_cpf,program,member_number,azul_category,archived,history_incomplete FROM mileage_accounts WHERE agency_id=$1 ORDER BY created_at DESC", [agency]),
-      getPool().query("SELECT e.id,e.account_id,e.issued_on,e.locator,e.operating_airline,e.flight_on,e.status,a.alias,a.program FROM mileage_emissions e JOIN mileage_accounts a ON a.id=e.account_id WHERE e.agency_id=$1 ORDER BY e.issued_on DESC", [agency]),
+      getPool().query("SELECT e.id,e.account_id,e.issued_on,e.locator,e.operating_airline,e.flight_on,e.status,a.alias,a.program,f.totals AS finance_totals FROM mileage_emissions e JOIN mileage_accounts a ON a.id=e.account_id LEFT JOIN cpf_operation_finance f ON f.emission_id=e.id AND f.agency_id=e.agency_id WHERE e.agency_id=$1 ORDER BY e.issued_on DESC", [agency]),
       getPool().query("SELECT p.id,p.emission_id,p.name,p.cpf,p.released_at,e.account_id,e.issued_on,e.status FROM mileage_emission_passengers p JOIN mileage_emissions e ON e.id=p.emission_id WHERE e.agency_id=$1", [agency]),
       getPool().query("SELECT id,account_id,name,cpf,effective_on,status,release_on,inclusion_type,is_child,relationship_confirmed,exemption_confirmed FROM azul_beneficiaries WHERE agency_id=$1 ORDER BY effective_on DESC", [agency]),
       getPool().query("SELECT program,account_id,limit_count,waiting_days,source,valid_from,checked_on,confirmed,active FROM mileage_rules WHERE agency_id=$1 ORDER BY created_at DESC", [agency]),
