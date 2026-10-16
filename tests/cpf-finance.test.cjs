@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs'), ts = require('typescript');
 function load(file, deps = {}) {
   const m = { exports: {} };
-  const js = ts.transpileModule(fs.readFileSync(file, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
+  const js = ts.transpileModule(fs.readFileSync(file, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.ReactJSX } }).outputText;
   new Function('require', 'exports', js)(n => deps[n] || require(n), m.exports);
   return m.exports;
 }
@@ -97,4 +97,26 @@ test('purchase survives JSONB reload and later edits keep earlier purchase histo
   const next = await save(db, 'agency', 'actor', 'operation', 1, { ...prior, purchase: { paidCents: 160000, receivedMiles: 100000 } });
   assert.equal(next.inputs.buyCents, 1600); assert.equal(next.revision, 2);
   assert.equal(prior.purchase.paidCents, 150000);
+});
+
+const { readCpfFinanceDraft, cpfFinanceDraft, emptyCpfFinance } = load('src/components/cpf-finance-fields.tsx', { '@/lib/cpf-finance': math });
+test('operation form: requested 40,000-mile example uses only consumed miles', () => {
+  const draft = { ...emptyCpfFinance, paid: '1500', received: '100000', miles: '40000', sellCents: '25', paidFeeCents: '100', chargedFeeCents: '100' };
+  const inputs = readCpfFinanceDraft(draft, input.accountId);
+  assert.equal(inputs.buyCents, 1500);
+  const result = calc(inputs);
+  assert.equal(result.milesCost, 60000);
+  assert.equal(result.cost, 70000);
+  assert.equal(result.revenue, 110000);
+  assert.equal(result.profit, 40000);
+  assert.deepEqual(readCpfFinanceDraft(cpfFinanceDraft(inputs), input.accountId), inputs);
+});
+test('operation form distinguishes pending, partial, zero and old saved prices', () => {
+  assert.equal(readCpfFinanceDraft(emptyCpfFinance, input.accountId), null);
+  assert.throws(() => readCpfFinanceDraft({ ...emptyCpfFinance, paid: '1500' }, input.accountId));
+  const zero = { ...emptyCpfFinance, paid: '0', received: '1000', miles: '0', sellCents: '0', paidFeeCents: '0', chargedFeeCents: '0' };
+  assert.equal(calc(readCpfFinanceDraft(zero, input.accountId)).cost, 0);
+  assert.throws(() => readCpfFinanceDraft({ ...zero, received: '0' }, input.accountId));
+  assert.throws(() => readCpfFinanceDraft({ ...zero, paidFeeCents: '' }, input.accountId));
+  assert.deepEqual(readCpfFinanceDraft(cpfFinanceDraft(input), input.accountId), input);
 });
