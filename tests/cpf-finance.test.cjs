@@ -60,3 +60,41 @@ test('CPF count queries and CRM route do not depend on finance', () => {
   assert.doesNotMatch(fs.readFileSync('src/app/api/crm-state/route.ts', 'utf8'), /finance/i);
   assert.doesNotMatch(fs.readFileSync('src/components/rm-app.tsx', 'utf8'), /MileageFinance|cpf_operation_finance/);
 });
+
+test('purchase derives existing thousand price and only charges miles used, with fees once', async () => {
+  const purchase = { paidCents: 150000, receivedMiles: 100000 };
+  const db = client();
+  const result = await save(db, 'agency', 'actor', 'operation', 0, { ...input, buyCents: 999999, purchase });
+  assert.equal(result.inputs.buyCents, 1500);
+  assert.deepEqual(result.inputs.purchase, purchase);
+  assert.equal(result.totals.milesCost, 75000);
+  assert.equal(result.totals.cost, 85000);
+  assert.equal(result.totals.revenue, 135000);
+  assert.equal(result.totals.profit, 50000);
+  const audit = db.calls.find(([sql]) => sql.includes('INSERT INTO cpf_operation_finance_history'));
+  assert.deepEqual(JSON.parse(audit[1][5]).purchase, purchase);
+});
+
+test('purchase preserves exact ratio until final cents, not rounded displayed rate', () => {
+  const p = { ...input, miles: 300000, purchase: { paidCents: 10000, receivedMiles: 300000 } };
+  assert.equal(math.normalizeMileageFinance(p).buyCents, 33);
+  assert.equal(calc(p).milesCost, 10000);
+  assert.equal(calc({ ...p, miles: 100000 }).milesCost, 3333);
+});
+
+test('purchase rejects blanks, zero denominator, negatives and fractional miles; zero paid remains valid', () => {
+  for (const receivedMiles of [0, undefined, null, '', -1, 1.5, Infinity]) assert.throws(() => calc({ ...input, purchase: { paidCents: 100, receivedMiles } }));
+  for (const paidCents of [undefined, null, '', -1, 1.5, Infinity]) assert.throws(() => calc({ ...input, purchase: { paidCents, receivedMiles: 1000 } }));
+  assert.throws(() => calc({ ...input, purchase: null }));
+  assert.equal(calc({ ...input, purchase: { paidCents: 0, receivedMiles: 1000 } }).milesCost, 0);
+});
+
+test('purchase survives JSONB reload and later edits keep earlier purchase history', async () => {
+  const prior = { ...input, purchase: { receivedMiles: 100000, paidCents: 150000 } };
+  const db = client({ inputs: prior, revision: 1 });
+  await save(db, 'agency', 'actor', 'operation', 1, { ...prior, purchase: { paidCents: 150000, receivedMiles: 100000 } });
+  assert.equal(db.calls.filter(([sql]) => sql.startsWith('INSERT')).length, 0);
+  const next = await save(db, 'agency', 'actor', 'operation', 1, { ...prior, purchase: { paidCents: 160000, receivedMiles: 100000 } });
+  assert.equal(next.inputs.buyCents, 1600); assert.equal(next.revision, 2);
+  assert.equal(prior.purchase.paidCents, 150000);
+});
