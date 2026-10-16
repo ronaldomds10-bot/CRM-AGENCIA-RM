@@ -35,6 +35,10 @@ test('backend recalculates once per emission, immutable snapshot and idempotent 
   assert.deepEqual(calls[0][1], [input.accountId, 'agency']);
   calls.length = 0; await validate(client, state([structuredClone(q)]), state([q]), 'agency', 'actor');
   assert.equal(calls.filter(([sql]) => sql.startsWith('INSERT')).length, 0);
+  const jsonb = structuredClone(q);
+  jsonb.issue.finance = Object.fromEntries(Object.entries(jsonb.issue.finance).sort(([a], [b]) => a.localeCompare(b)));
+  await validate(client, state([jsonb]), state([q]), 'agency', 'actor');
+  assert.equal(calls.filter(([sql]) => sql.startsWith('INSERT')).length, 0);
   const changed = structuredClone(q); changed.issue.finance.buyCents = 1600;
   await validate(client, state([q]), state([changed]), 'agency', 'actor');
   assert.equal(q.issue.finance.buyCents, 1500);

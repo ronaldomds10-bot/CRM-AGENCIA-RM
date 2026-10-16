@@ -9,7 +9,8 @@ export async function validateEmissionFinances(client: PoolClient, existing: Sta
     const old = previous.get(q.id);
     const details = q.issue as Record<string, unknown> | undefined;
     const oldDetails = old?.issue as Record<string, unknown> | undefined;
-    const oldFinance = oldDetails?.finance;
+    // JSONB does not retain object key order; compare canonical input snapshots.
+    const oldFinance = oldDetails?.finance ? normalizeMileageFinance(oldDetails.finance as MileageFinance) : undefined;
     // Old clients may not erase an established financial snapshot.
     if (oldFinance && !details?.finance) throw new RequestInputError("Recarregue a emissão antes de alterar o financeiro.", 409);
     if (details?.finance) {
