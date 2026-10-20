@@ -17,6 +17,7 @@ function publicFlight(value: unknown) {
     segmentId: string(flight.segmentId, 100), code: string(flight.code, 40), airline: string(flight.airline, 120), cabinClass: string(flight.cabinClass, 80),
     from: string(flight.from, 180), to: string(flight.to, 180), departTime: string(flight.departTime, 10), arriveTime: string(flight.arriveTime, 10),
     date: string(flight.date, 10), arrivalDate: string(flight.arrivalDate, 10), adults: number(flight.adults), children: number(flight.children), bags: number(flight.bags),
+    passengerCount: array(flight.passengers).length || number(flight.passengerCount) || number(flight.adults) + number(flight.children),
     passengers: [], checkedBags: number(flight.checkedBags), carryOnBags: number(flight.carryOnBags), backpacks: number(flight.backpacks),
     checkedBagWeight: number(flight.checkedBagWeight), carryOnWeight: number(flight.carryOnWeight), pets: number(flight.pets), refundable: boolean(flight.refundable),
   };

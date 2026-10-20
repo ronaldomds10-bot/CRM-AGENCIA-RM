@@ -100,6 +100,7 @@ type Flight = {
   children: number;
   bags: number;
   passengers: Passenger[];
+  passengerCount?: number;
   checkedBags: number;
   carryOnBags: number;
   backpacks: number;
@@ -2435,7 +2436,7 @@ function SharedFlight({ flight, title, airports, timeZones, detailsFlight }: { f
   const duration = durationMinutes !== null ? `${Math.floor(durationMinutes / 60)}h ${String(durationMinutes % 60).padStart(2, "0")}min de voo` : timeZones ? "Duração a confirmar" : "Calculando duração...";
   const summary = detailsFlight ?? flight;
   const detailRows: Array<{ kind: SharedIconKind; label: string; value: string; weight?: string }> = [
-    { kind: "users", label: "Passageiros", value: String(summary.passengers?.length || summary.adults + summary.children || 0) },
+    { kind: "users", label: "Passageiros", value: String(summary.passengers?.length || summary.passengerCount || summary.adults + summary.children || 0) },
     { kind: "refresh", label: "Reembolsável", value: summary.refundable ? "Sim" : "Não" },
     { kind: "paw", label: "Pets", value: String(summary.pets || 0) },
     { kind: "suitcase", label: "Bagagem Despachada", value: String(summary.checkedBags || 0), weight: summary.checkedBagWeight ? `${summary.checkedBagWeight}kg` : undefined },
