@@ -69,6 +69,7 @@ function publicOption(value: unknown) {
   return {
     id: string(option.id, 100), label: string(option.label, 80), hotelIndex: Math.max(0, Math.min(8, Math.floor(number(option.hotelIndex)))),
     cashPrice: number(option.cashPrice), installments: string(option.installments, 40), paymentOption: string(option.paymentOption, 200), recommended: boolean(option.recommended),
+    manualCount: Math.max(0, Math.min(24, Math.floor(number(option.manualCount)))), manualValue: number(option.manualValue), manualNote: string(option.manualNote, 40),
   };
 }
 

@@ -232,6 +232,9 @@ type QuoteOption = {
   installments: string;
   paymentOption: string;
   recommended?: boolean;
+  manualCount?: number;
+  manualValue?: number;
+  manualNote?: string;
 };
 type Quote = {
   id: string;
@@ -2352,7 +2355,7 @@ function SharedQuotePage({ quote, settings }: SharedQuote) {
             {option.recommended ? <span className="shared-option-badge">Recomendada</span> : null}
             <small>{option.label || `Opção ${index + 1}`}</small>
             <h3>{hotel?.name || "Hospedagem a confirmar"}</h3>
-            {quote.showValues ? <><p className="shared-option-pix"><span>Valor no Pix:</span> <strong>{money(option.cashPrice)}</strong></p>{calc ? <p className="shared-option-installment">ou até {calc.installments}x de {money(calc.installmentValue)}</p> : null}</> : null}
+            {quote.showValues ? <><p className="shared-option-pix"><span>Valor no Pix:</span> <strong>{money(option.cashPrice)}</strong></p>{option.manualCount && option.manualValue ? <p className="shared-option-installment">ou {option.manualCount}x de {money(option.manualValue)}{option.manualNote ? ` ${option.manualNote}` : ""}</p> : calc ? <p className="shared-option-installment">ou até {calc.installments}x de {money(calc.installmentValue)}</p> : null}</> : null}
           </article>;
         })}</div></section> : null}
         {quote.tours.length ? <section className="shared-section"><h2>Passeios</h2>{quote.tours.map((tour, index) => <article key={`${tour.name}-${index}`} className="shared-hotel-copy"><small>Passeio {index + 1}</small><h3>{tour.name}</h3><p>{[tour.provider, tour.date ? date(tour.date) : ""].filter(Boolean).join(" · ")}</p><p className="shared-notes">{tour.description}</p>{tour.observation ? <p className="shared-notes">{tour.observation}</p> : null}</article>)}</section> : null}
@@ -3662,6 +3665,17 @@ function OptionsForm({ quote, settings, onChange, onAdd }: { quote: Quote; setti
               <Field label="Preço parcelado">
                 <input className="input" value={option.paymentOption} readOnly aria-readonly="true" />
                 {calculation ? <small>{calculation.installments}x de {money(calculation.installmentValue)}</small> : null}
+              </Field>
+            </div>
+            <div className="trip-pricing-grid">
+              <Field label="Parcelamento manual: nº de parcelas (opcional)">
+                <input className="input" type="number" min={0} max={24} value={option.manualCount ?? ""} onChange={(e) => update(index, { manualCount: Number(e.target.value) || 0 })} />
+              </Field>
+              <Field label="Valor de cada parcela (substitui o cálculo)">
+                <CurrencyInput value={option.manualValue ?? 0} onChange={(manualValue) => update(index, { manualValue })} />
+              </Field>
+              <Field label="Complemento (ex.: por pessoa)">
+                <input className="input" value={option.manualNote ?? ""} onChange={(e) => update(index, { manualNote: e.target.value })} />
               </Field>
             </div>
             <label className="flex items-center gap-2 text-sm">
