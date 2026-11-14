@@ -2263,13 +2263,7 @@ function LogoutIcon() {
 }
 function SharedQuotePage({ quote, settings }: SharedQuote) {
   const date = (value: string) => value ? new Date(`${value}T12:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" }) : "Data a confirmar";
-  const installment = installmentCalculation(quote.cashPrice, quote.installments);
   const installmentDialogRef = useRef<HTMLDialogElement>(null);
-  const installmentChoices = installment ? Array.from({ length: installment.installments }, (_, index) => {
-    const count = index + 1;
-    const rate = count === installment.installments ? installment.rate : settings.installmentRates?.[index];
-    return typeof rate === "number" && Number.isFinite(rate) ? { count, value: quote.cashPrice * (1 + rate / 100) / count } : null;
-  }).filter((choice): choice is { count: number; value: number } => choice !== null) : [];
   const outboundFlights = [quote.flightOut, ...(quote.flightOutSegments ?? [])].filter((flight) => flight.from || flight.to || flight.code);
   const returnFlights = [quote.flightBack, ...(quote.flightBackSegments ?? [])].filter((flight) => flight.from || flight.to || flight.code);
   const [airports, setAirports] = useState<Airport[]>(airportCache ?? []);
@@ -2289,8 +2283,29 @@ function SharedQuotePage({ quote, settings }: SharedQuote) {
       .catch(() => { if (active) setAirportTimeZones({}); });
     return () => { active = false; };
   }, []);
-  const hotels = [quote.hotel, ...(quote.hotelOptions ?? [])].filter((hotel) => hotel.name || hotel.address || hotel.checkin || hotel.checkout);
+  const allHotels = [quote.hotel, ...(quote.hotelOptions ?? [])];
   const sharedOptions = quote.options ?? [];
+  const multiOptions = sharedOptions.length > 1;
+  const [selectedOptionIndex, setSelectedOptionIndex] = useState(() => {
+    const recommendedIndex = sharedOptions.findIndex((option) => option.recommended);
+    return recommendedIndex >= 0 ? recommendedIndex : 0;
+  });
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const activeOption = multiOptions ? sharedOptions[Math.min(selectedOptionIndex, sharedOptions.length - 1)] : null;
+  const activePrice = activeOption ? activeOption.cashPrice : quote.cashPrice;
+  const activeInstallmentText = activeOption ? activeOption.installments : quote.installments;
+  const installment = installmentCalculation(activePrice, activeInstallmentText);
+  const installmentChoices = installment ? Array.from({ length: installment.installments }, (_, index) => {
+    const count = index + 1;
+    const rate = count === installment.installments ? installment.rate : settings.installmentRates?.[index];
+    return typeof rate === "number" && Number.isFinite(rate) ? { count, value: activePrice * (1 + rate / 100) / count } : null;
+  }).filter((choice): choice is { count: number; value: number } => choice !== null) : [];
+  const selectedHotelIndex = activeOption && activeOption.hotelIndex >= 0 && activeOption.hotelIndex < allHotels.length ? activeOption.hotelIndex : -1;
+  const selectedHotel = selectedHotelIndex >= 0 ? allHotels[selectedHotelIndex] : null;
+  const hotels = allHotels
+    .map((hotel, index) => ({ hotel, index }))
+    .filter(({ hotel }) => hotel.name || hotel.address || hotel.checkin || hotel.checkout)
+    .filter(({ index }) => selectedHotelIndex < 0 || index === selectedHotelIndex);
   const sharedId = new URLSearchParams(window.location.search).get("share") ?? "";
   const phone = settings.contactPhone.replace(/\D/g, "");
   const whatsappPhone = phone.startsWith("55") ? phone : `55${phone}`;
@@ -2312,11 +2327,12 @@ function SharedQuotePage({ quote, settings }: SharedQuote) {
     `Período: ${date(quote.startDate)} a ${date(quote.endDate)}`,
     ...outboundFlights.map((flight, index) => flightMessage(flight, `Ida${index ? ` ${index + 1}` : ""}`)),
     ...returnFlights.map((flight, index) => flightMessage(flight, `Volta${index ? ` ${index + 1}` : ""}`)),
-    ...hotels.map((hotel, index) => `Hospedagem ${index + 1}: ${hotel.name || "Hotel a confirmar"} · ${date(hotel.checkin)} ${hotel.checkinTime || ""} até ${date(hotel.checkout)} ${hotel.checkoutTime || ""}`.trim()),
+    ...hotels.map(({ hotel }, index) => `Hospedagem ${index + 1}: ${hotel.name || "Hotel a confirmar"} · ${date(hotel.checkin)} ${hotel.checkinTime || ""} até ${date(hotel.checkout)} ${hotel.checkoutTime || ""}`.trim()),
     quote.car.pickupAddress ? `Carro: retirada em ${quote.car.pickupAddress}, ${date(quote.car.pickupDate)} ${quote.car.pickupTime || ""}; devolução em ${quote.car.returnAddress || quote.car.pickupAddress}, ${date(quote.car.returnDate)} ${quote.car.returnTime || ""}.` : "",
     quote.insurance.description || quote.insurance.provider || quote.insurance.plan ? `Seguro viagem: ${quote.insurance.description || [quote.insurance.provider, quote.insurance.plan].filter(Boolean).join(" · ")}` : "",
     ...quote.tours.map((tour, index) => `Passeio ${index + 1}: ${tour.name}${tour.date ? ` · ${date(tour.date)}` : ""}`),
-    quote.showValues ? `Valor no Pix: ${money(quote.cashPrice)}${installment ? ` · Em até ${installment.installments}x de ${money(installment.installmentValue)}` : ""}` : "",
+    activeOption ? `Opção selecionada: ${activeOption.label || `Opção ${selectedOptionIndex + 1}`}${selectedHotel?.name ? ` · ${selectedHotel.name}` : ""}` : "",
+    quote.showValues ? `Valor no Pix: ${money(activePrice)}${activeOption?.manualCount && activeOption?.manualValue ? ` · Em até ${activeOption.manualCount}x de ${money(activeOption.manualValue)}` : installment ? ` · Em até ${installment.installments}x de ${money(installment.installmentValue)}` : ""}` : "",
     quote.notes ? `Observações: ${quote.notes}` : "",
     `Orçamento: ${window.location.href}`,
     "Gostaria de continuar com a confirmação.",
@@ -2348,25 +2364,40 @@ function SharedQuotePage({ quote, settings }: SharedQuote) {
         </nav>
         {outboundFlights.length || returnFlights.length ? <section className="shared-itinerary" aria-label="Voos"><SharedFlightSequence flights={outboundFlights} direction="ida" airports={airports} timeZones={airportTimeZones} /><SharedFlightSequence flights={returnFlights} direction="volta" airports={airports} timeZones={airportTimeZones} /></section> : null}
         {quote.car.pickupAddress ? <section className="shared-section"><h2>Reservas de carro</h2><p><strong>Retirada:</strong> {quote.car.pickupAddress} em {date(quote.car.pickupDate)}</p><p><strong>Devolução:</strong> {quote.car.returnAddress} em {date(quote.car.returnDate)}</p><p>{quote.car.models}</p></section> : null}
-        {hotels.length ? <section className="shared-section"><h2>Hospedagem</h2><div className="shared-hotels">{hotels.map((hotel, index) => <SharedHotel key={`${hotel.name}-${index}`} hotel={hotel} index={index} sharedId={sharedId} date={date} />)}</div></section> : null}
-        {sharedOptions.length > 1 ? <section className="shared-section shared-options"><h2>Escolha sua opção</h2><div className="shared-options-grid">{sharedOptions.map((option, index) => {
-          const calc = installmentCalculation(option.cashPrice, option.installments);
-          const hotel = [quote.hotel, ...(quote.hotelOptions ?? [])][option.hotelIndex];
-          return <article key={option.id || index} className={`shared-option-card${option.recommended ? " shared-option-recommended" : ""}`}>
-            {option.recommended ? <span className="shared-option-badge">Recomendada</span> : null}
-            <small>{option.label || `Opção ${index + 1}`}</small>
-            <h3>{hotel?.name || "Hospedagem a confirmar"}</h3>
-            {quote.showValues ? <><p className="shared-option-pix"><span>Valor no Pix:</span> <strong>{money(option.cashPrice)}</strong>{option.pixNote ? <small className="shared-option-note">{option.pixNote}</small> : null}</p>{option.manualCount && option.manualValue ? <p className="shared-option-installment">ou {option.manualCount}x de {money(option.manualValue)}{option.manualNote ? ` ${option.manualNote}` : ""}</p> : calc ? <p className="shared-option-installment">ou até {calc.installments}x de {money(calc.installmentValue)}</p> : null}</> : null}
-          </article>;
-        })}</div></section> : null}
+        {multiOptions && activeOption ? <section className="shared-section shared-options">
+          <h2>Escolha sua opção</h2>
+          <button type="button" className="shared-options-toggle" aria-expanded={optionsOpen} aria-controls="shared-options-list" onClick={() => setOptionsOpen((open) => !open)}>
+            Opções <span className="shared-options-current">{activeOption.label || `Opção ${selectedOptionIndex + 1}`}{selectedHotel?.name ? ` · ${selectedHotel.name}` : ""}</span>
+          </button>
+          {optionsOpen ? <div className="shared-options-list" id="shared-options-list" role="listbox" aria-label="Opções de hospedagem">
+            {sharedOptions.map((option, index) => {
+              const hotel = allHotels[option.hotelIndex];
+              return <button key={option.id || index} type="button" role="option" aria-selected={index === selectedOptionIndex} className={`shared-option-tab${index === selectedOptionIndex ? " shared-option-tab-active" : ""}`} onClick={() => { setSelectedOptionIndex(index); setOptionsOpen(false); }}>
+                <strong>{option.label || `Opção ${index + 1}`}</strong>
+                <span>{hotel?.name || "Hospedagem a confirmar"}</span>
+                {option.recommended ? <span className="shared-option-tab-badge">Recomendada</span> : null}
+                {quote.showValues ? <span className="shared-option-tab-price">{money(option.cashPrice)}</span> : null}
+              </button>;
+            })}
+          </div> : null}
+          {quote.showValues ? <article className={`shared-option-card${activeOption.recommended ? " shared-option-recommended" : ""}`}>
+            {activeOption.recommended ? <span className="shared-option-badge">Recomendada</span> : null}
+            <small>{activeOption.label || `Opção ${selectedOptionIndex + 1}`}</small>
+            {selectedHotel?.name ? <h3>{selectedHotel.name}</h3> : null}
+            <p className="shared-option-pix"><span>Valor no Pix:</span> <strong>{money(activeOption.cashPrice)}</strong>{activeOption.pixNote ? <small className="shared-option-note">{activeOption.pixNote}</small> : null}</p>
+            {activeOption.manualCount && activeOption.manualValue ? <p className="shared-option-installment">ou {activeOption.manualCount}x de {money(activeOption.manualValue)}{activeOption.manualNote ? ` ${activeOption.manualNote}` : ""}</p> : installment ? <p className="shared-option-installment">ou até {installment.installments}x de {money(installment.installmentValue)}</p> : null}
+          </article> : null}
+        </section> : null}
+        {hotels.length ? <section className="shared-section"><h2>Hospedagem</h2><div className="shared-hotels">{hotels.map(({ hotel, index }) => <SharedHotel key={`${hotel.name}-${index}`} hotel={hotel} index={multiOptions ? 0 : index} sharedId={sharedId} date={date} />)}</div></section> : null}
         {quote.tours.length ? <section className="shared-section"><h2>Passeios</h2>{quote.tours.map((tour, index) => <article key={`${tour.name}-${index}`} className="shared-hotel-copy"><small>Passeio {index + 1}</small><h3>{tour.name}</h3><p>{[tour.provider, tour.date ? date(tour.date) : ""].filter(Boolean).join(" · ")}</p><p className="shared-notes">{tour.description}</p>{tour.observation ? <p className="shared-notes">{tour.observation}</p> : null}</article>)}</section> : null}
         {quote.transfers.length ? <section className="shared-section"><h2>Transfer</h2>{quote.transfers.map((transfer, index) => <article key={`${transfer.name}-${index}`} className="shared-hotel-copy"><small>Transfer {index + 1}</small><h3>{transfer.name}</h3><p>{[transfer.provider, transfer.date ? date(transfer.date) : "", transfer.category].filter(Boolean).join(" · ")}</p><p>{transfer.outboundOrigin} → {transfer.outboundDestination}</p>{transfer.returnOrigin || transfer.returnDestination ? <p>{transfer.returnOrigin} → {transfer.returnDestination}</p> : null}<p className="shared-notes">{transfer.description}</p>{transfer.observation ? <p className="shared-notes">{transfer.observation}</p> : null}</article>)}</section> : null}
         <section className="shared-section shared-attendant"><h2><SharedIcon kind="person" /> Seu Atendente</h2><p className="shared-attendant-intro">Estamos aqui para ajudar em qualquer dúvida sobre sua viagem</p><div className="shared-attendant-profile"><span className="shared-attendant-avatar" aria-hidden="true">{(settings.contactName || "RM").trim().slice(0, 2).toUpperCase()}</span><div><h3>{settings.contactName || "Equipe de atendimento"}</h3>{settings.contactEmail ? <p><SharedIcon kind="mail" />{settings.contactEmail}</p> : null}{settings.contactPhone ? <p><SharedIcon kind="phone" />{settings.contactPhone}</p> : null}{settings.companyName ? <p><SharedIcon kind="building" />{settings.companyName}</p> : null}</div></div></section>
         {quote.notes ? <section className="shared-section"><h2>Informações adicionais</h2><p className="shared-notes">{quote.notes}</p></section> : null}
-        <section className={`shared-cta${quote.showValues && sharedOptions.length <= 1 ? " shared-cta-with-price" : ""}`}>
-          {quote.showValues && sharedOptions.length <= 1 ? <div className="shared-cta-price">
-            <div className="shared-cta-value"><span>Valor no Pix:</span><strong>{money(quote.cashPrice)}</strong></div>
-            {installment ? <button type="button" className="shared-cta-installment" onClick={() => installmentDialogRef.current?.showModal()} aria-haspopup="dialog"><svg aria-hidden="true" viewBox="0 0 20 16" width="15" height="12" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="1" y="2" width="18" height="12" rx="2" /><path d="M1 6h18" /></svg>Em até {installment.installments}x de {money(installment.installmentValue)}</button> : null}
+        <section className={`shared-cta${quote.showValues ? " shared-cta-with-price" : ""}`}>
+          {quote.showValues ? <div className="shared-cta-price">
+            {activeOption ? <small className="shared-cta-option">{activeOption.label || `Opção ${selectedOptionIndex + 1}`}{selectedHotel?.name ? ` · ${selectedHotel.name}` : ""}</small> : null}
+            <div className="shared-cta-value"><span>Valor no Pix:</span><strong>{money(activePrice)}</strong></div>
+            {activeOption?.manualCount && activeOption?.manualValue ? <p className="shared-option-installment">ou {activeOption.manualCount}x de {money(activeOption.manualValue)}{activeOption.manualNote ? ` ${activeOption.manualNote}` : ""}</p> : installment ? <button type="button" className="shared-cta-installment" onClick={() => installmentDialogRef.current?.showModal()} aria-haspopup="dialog"><svg aria-hidden="true" viewBox="0 0 20 16" width="15" height="12" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="1" y="2" width="18" height="12" rx="2" /><path d="M1 6h18" /></svg>Em até {installment.installments}x de {money(installment.installmentValue)}</button> : null}
           </div> : null}
           <div className="shared-cta-message"><h2>Pronto para confirmar sua viagem?</h2><p>Garanta já sua reserva e prepare-se para uma experiência incrível {quote.destination ? `em ${quote.destination}` : "na sua viagem"}. Nossos atendentes estão prontos para ajudar em cada etapa da sua jornada.</p>{phone ? <a href={contactWhatsAppUrl} target="_blank" rel="noreferrer">Entre em contato</a> : null}</div>
         </section>

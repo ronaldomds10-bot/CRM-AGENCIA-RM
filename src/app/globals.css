@@ -3056,3 +3056,17 @@ textarea:focus-visible {
 
 /* shared options styles v2 */
 .shared-option-card > * { margin-top: 0; margin-bottom: 0; }
+.shared-options-toggle { display: flex; align-items: center; gap: .6rem; width: 100%; border: 1px solid #d6e0ed; border-radius: 10px; background: #fff; padding: .9rem 1.1rem; font-size: 1rem; font-weight: 700; color: #15243a; cursor: pointer; }
+.shared-options-toggle::after { content: "\25BE"; margin-left: auto; color: #5b6b82; }
+.shared-options-toggle[aria-expanded="true"]::after { content: "\25B4"; }
+.shared-options-current { font-weight: 400; color: #5b6b82; font-size: .88rem; }
+.shared-options-list { display: grid; gap: .5rem; margin: .75rem 0; }
+.shared-option-tab { display: flex; align-items: center; flex-wrap: wrap; gap: .35rem .6rem; border: 1px solid #d6e0ed; border-radius: 10px; background: #fff; padding: .8rem 1rem; text-align: left; cursor: pointer; color: #15243a; }
+.shared-option-tab strong { font-size: .95rem; }
+.shared-option-tab span { color: #5b6b82; font-size: .85rem; }
+.shared-option-tab-active { border-color: #c9a45c; box-shadow: 0 0 0 1px #c9a45c; }
+.shared-option-tab-badge { background: #c9a45c; color: #15243a; font-size: .68rem; font-weight: 700; border-radius: 999px; padding: .12rem .55rem; }
+.shared-option-tab-price { margin-left: auto; color: #058753; font-weight: 700; font-size: .95rem; }
+.shared-options .shared-option-card { margin-top: .75rem; }
+.shared-cta-option { display: block; color: #d9f5e7; font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; }
+.shared-cta-price .shared-option-installment { color: #d9f5e7; }
