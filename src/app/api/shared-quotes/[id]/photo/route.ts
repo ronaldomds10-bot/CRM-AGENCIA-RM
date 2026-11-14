@@ -27,7 +27,11 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
 
     const response = await fetchGooglePlaces(`/v1/${name}/media?maxWidthPx=900&maxHeightPx=600&skipHttpRedirect=true`);
     if (!response) return NextResponse.json({ error: PLACES_NOT_CONFIGURED }, { status: 503 });
-    if (!response.ok) return NextResponse.json({ error: "Foto indisponível.", upstreamStatus: response.status }, { status: 502 });
+    if (!response.ok) {
+      const upstreamDetail = await response.text().then((text) => text.slice(0, 400)).catch(() => "");
+      console.error("Foto do Google Places recusada:", response.status, upstreamDetail);
+      return NextResponse.json({ error: "Foto indisponível.", upstreamStatus: response.status, upstreamDetail }, { status: 502 });
+    }
     const contentType = response.headers.get("content-type") ?? "";
     if (!contentType.startsWith("image/")) return NextResponse.json({ error: "Foto indisponível." }, { status: 502 });
     return new NextResponse(response.body, { headers: { "Cache-Control": "public, max-age=86400, s-maxage=604800", "Content-Type": contentType, "X-Content-Type-Options": "nosniff" } });
