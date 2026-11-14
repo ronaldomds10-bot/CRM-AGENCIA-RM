@@ -3053,3 +3053,6 @@ textarea:focus-visible {
 .shared-option-pix strong { font-size: 1.25rem; color: #058753; }
 .shared-option-installment { margin: 0; color: #5b6b82; font-size: .9rem; }
 .shared-option-note { display: block; color: #5b6b82; font-size: .8rem; text-transform: none; letter-spacing: 0; }
+
+/* shared options styles v2 */
+.shared-option-card > * { margin-top: 0; margin-bottom: 0; }
