@@ -3064,7 +3064,9 @@ textarea:focus-visible {
 .shared-option-tab { display: flex; align-items: center; flex-wrap: wrap; gap: .35rem .6rem; border: 1px solid #d6e0ed; border-radius: 10px; background: #fff; padding: .8rem 1rem; text-align: left; cursor: pointer; color: #15243a; }
 .shared-option-tab strong { font-size: .95rem; }
 .shared-option-tab span { color: #5b6b82; font-size: .85rem; }
-.shared-option-tab-active { border-color: #c9a45c; box-shadow: 0 0 0 1px #c9a45c; }
+.shared-option-tab-active { border-color: #c9a45c; box-shadow: 0 0 0 1px #c9a45c; background: #fdf6e7; }
+.shared-options-hint { margin: 0 0 .25rem; color: #5b6b82; font-size: .85rem; }
+.shared-options-list { margin-top: .5rem; }
 .shared-option-tab-badge { background: #c9a45c; color: #15243a; font-size: .68rem; font-weight: 700; border-radius: 999px; padding: .12rem .55rem; }
 .shared-option-tab-price { margin-left: auto; color: #058753; font-weight: 700; font-size: .95rem; }
 .shared-options .shared-option-card { margin-top: .75rem; }

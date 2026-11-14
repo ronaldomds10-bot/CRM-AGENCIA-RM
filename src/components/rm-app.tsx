@@ -2297,7 +2297,6 @@ function SharedQuotePage({ quote, settings }: SharedQuote) {
     const recommendedIndex = sharedOptions.findIndex((option) => option.recommended);
     return recommendedIndex >= 0 ? recommendedIndex : 0;
   });
-  const [optionsOpen, setOptionsOpen] = useState(false);
   const activeOption = multiOptions ? sharedOptions[Math.min(selectedOptionIndex, sharedOptions.length - 1)] : null;
   const ownFlights = activeOption?.flightOut !== undefined;
   const effFlightOut = ownFlights && activeOption?.flightOut ? activeOption.flightOut : quote.flightOut;
@@ -2373,31 +2372,20 @@ function SharedQuotePage({ quote, settings }: SharedQuote) {
           <div><small>Sua viagem para</small><h1>{quote.destination || "Destino especial"}</h1><p>{date(quote.startDate)} - {date(quote.endDate)}</p></div>
           <div><strong>Uma experiência feita para você</strong><p>Confira todos os detalhes preparados para sua viagem.</p></div>
         </section>
-        <nav className="shared-actions">
-          <button onClick={shareOnWhatsApp}>Compartilhar</button>
-          <a href={calendarUrl} target="_blank" rel="noreferrer">Adicionar ao Google Agenda</a>
-          {phone ? <a href={`tel:+55${phone}`}>Ligar para atendente</a> : null}
-          {phone ? <a href={contactWhatsAppUrl} target="_blank" rel="noreferrer">WhatsApp</a> : null}
-          {settings.instagram ? <a href={`https://instagram.com/${settings.instagram.replace("@", "")}`} target="_blank" rel="noreferrer">Instagram</a> : null}
-        </nav>
-        {outboundFlights.length || returnFlights.length ? <section className="shared-itinerary" aria-label="Voos"><SharedFlightSequence flights={outboundFlights} direction="ida" airports={airports} timeZones={airportTimeZones} /><SharedFlightSequence flights={returnFlights} direction="volta" airports={airports} timeZones={airportTimeZones} /></section> : null}
-        {effCar.pickupAddress ? <section className="shared-section"><h2>Reservas de carro</h2><p><strong>Retirada:</strong> {effCar.pickupAddress} em {date(effCar.pickupDate)}</p><p><strong>Devolução:</strong> {effCar.returnAddress} em {date(effCar.returnDate)}</p><p>{effCar.models}</p></section> : null}
         {multiOptions && activeOption ? <section className="shared-section shared-options">
           <h2>Escolha sua opção</h2>
-          <button type="button" className="shared-options-toggle" aria-expanded={optionsOpen} aria-controls="shared-options-list" onClick={() => setOptionsOpen((open) => !open)}>
-            Opções <span className="shared-options-current">{activeOption.label || `Opção ${selectedOptionIndex + 1}`}{selectedHotel?.name ? ` · ${selectedHotel.name}` : ""}</span>
-          </button>
-          {optionsOpen ? <div className="shared-options-list" id="shared-options-list" role="listbox" aria-label="Opções de hospedagem">
+          <p className="shared-options-hint">Toque em uma opção para ver o pacote completo dela abaixo: aéreo, hospedagem, serviços e valores.</p>
+          <div className="shared-options-list" id="shared-options-list" role="listbox" aria-label="Opções do orçamento">
             {sharedOptions.map((option, index) => {
               const hotel = allHotels[option.hotelIndex];
-              return <button key={option.id || index} type="button" role="option" aria-selected={index === selectedOptionIndex} className={`shared-option-tab${index === selectedOptionIndex ? " shared-option-tab-active" : ""}`} onClick={() => { setSelectedOptionIndex(index); setOptionsOpen(false); }}>
+              return <button key={option.id || index} type="button" role="option" aria-selected={index === selectedOptionIndex} className={`shared-option-tab${index === selectedOptionIndex ? " shared-option-tab-active" : ""}`} onClick={() => setSelectedOptionIndex(index)}>
                 <strong>{option.label || `Opção ${index + 1}`}</strong>
                 <span>{hotel?.name || "Hospedagem a confirmar"}</span>
                 {option.recommended ? <span className="shared-option-tab-badge">Recomendada</span> : null}
                 {quote.showValues ? <span className="shared-option-tab-price">{money(option.cashPrice)}</span> : null}
               </button>;
             })}
-          </div> : null}
+          </div>
           {quote.showValues ? <article className={`shared-option-card${activeOption.recommended ? " shared-option-recommended" : ""}`}>
             {activeOption.recommended ? <span className="shared-option-badge">Recomendada</span> : null}
             <small>{activeOption.label || `Opção ${selectedOptionIndex + 1}`}</small>
@@ -2407,6 +2395,15 @@ function SharedQuotePage({ quote, settings }: SharedQuote) {
           </article> : null}
           {activeOption.notes ? <article className="shared-option-card shared-option-conditions"><small>Condições desta opção</small><p className="shared-notes">{activeOption.notes}</p></article> : null}
         </section> : null}
+        <nav className="shared-actions">
+          <button onClick={shareOnWhatsApp}>Compartilhar</button>
+          <a href={calendarUrl} target="_blank" rel="noreferrer">Adicionar ao Google Agenda</a>
+          {phone ? <a href={`tel:+55${phone}`}>Ligar para atendente</a> : null}
+          {phone ? <a href={contactWhatsAppUrl} target="_blank" rel="noreferrer">WhatsApp</a> : null}
+          {settings.instagram ? <a href={`https://instagram.com/${settings.instagram.replace("@", "")}`} target="_blank" rel="noreferrer">Instagram</a> : null}
+        </nav>
+        {outboundFlights.length || returnFlights.length ? <section className="shared-itinerary" aria-label="Voos"><SharedFlightSequence flights={outboundFlights} direction="ida" airports={airports} timeZones={airportTimeZones} /><SharedFlightSequence flights={returnFlights} direction="volta" airports={airports} timeZones={airportTimeZones} /></section> : null}
+        {effCar.pickupAddress ? <section className="shared-section"><h2>Reservas de carro</h2><p><strong>Retirada:</strong> {effCar.pickupAddress} em {date(effCar.pickupDate)}</p><p><strong>Devolução:</strong> {effCar.returnAddress} em {date(effCar.returnDate)}</p><p>{effCar.models}</p></section> : null}
         {hotels.length ? <section className="shared-section"><h2>Hospedagem</h2><div className="shared-hotels">{hotels.map(({ hotel, index }) => <SharedHotel key={`${hotel.name}-${index}`} hotel={hotel} index={multiOptions ? 0 : index} sharedId={sharedId} date={date} />)}</div></section> : null}
         {effTours.length ? <section className="shared-section"><h2>Passeios</h2>{effTours.map((tour, index) => <article key={`${tour.name}-${index}`} className="shared-hotel-copy"><small>Passeio {index + 1}</small><h3>{tour.name}</h3><p>{[tour.provider, tour.date ? date(tour.date) : ""].filter(Boolean).join(" · ")}</p><p className="shared-notes">{tour.description}</p>{tour.observation ? <p className="shared-notes">{tour.observation}</p> : null}</article>)}</section> : null}
         {effTransfers.length ? <section className="shared-section"><h2>Transfer</h2>{effTransfers.map((transfer, index) => <article key={`${transfer.name}-${index}`} className="shared-hotel-copy"><small>Transfer {index + 1}</small><h3>{transfer.name}</h3><p>{[transfer.provider, transfer.date ? date(transfer.date) : "", transfer.category].filter(Boolean).join(" · ")}</p><p>{transfer.outboundOrigin} → {transfer.outboundDestination}</p>{transfer.returnOrigin || transfer.returnDestination ? <p>{transfer.returnOrigin} → {transfer.returnDestination}</p> : null}<p className="shared-notes">{transfer.description}</p>{transfer.observation ? <p className="shared-notes">{transfer.observation}</p> : null}</article>)}</section> : null}
@@ -3731,7 +3728,7 @@ function OptionsForm({ quote, settings, onChange, onAdd }: { quote: Quote; setti
   };
   return (
     <SectionBand icon="▥" title="Opções do orçamento" action="Adicionar opção" onAdd={onAdd}>
-      <p className="text-sm text-slate-400">Cada opção tem a sua hospedagem (cadastrada na aba Hospedagens), o seu preço e as suas condições. Voos e demais serviços cadastrados nas outras abas são comuns a todas as opções. No link compartilhado o cliente vê uma opção por vez e alterna pelo botão Opções.</p>
+      <p className="text-sm text-slate-400">Cada opção tem a sua hospedagem (cadastrada na aba Hospedagens), o seu preço e as suas condições. Voos e demais serviços cadastrados nas outras abas são comuns a todas as opções. No link compartilhado o cliente vê as opções em destaque no topo da página e, ao escolher uma, todos os detalhes abaixo (aéreo, hospedagem, carro, seguro, passeios, transfer e valores) passam a ser os daquela opção.</p>
       {options.map((option, index) => {
         const calculation = installmentCalculation(option.cashPrice, option.installments);
         return (
