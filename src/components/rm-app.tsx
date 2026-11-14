@@ -2424,7 +2424,8 @@ function SharedQuotePage({ quote, settings }: SharedQuote) {
   );
 }
 function SharedHotel({ hotel, index, sharedId, date }: { hotel: HotelReservation; index: number; sharedId: string; date: (value: string) => string }) {
-  const photos = (hotel.photoNames ?? []).slice(0, 4);
+  const [failedPhotos, setFailedPhotos] = useState<string[]>([]);
+  const photos = (hotel.photoNames ?? []).slice(0, 4).filter((name) => !failedPhotos.includes(name));
   const [selectedPhoto, setSelectedPhoto] = useState("");
   const photoUrl = (name: string) => `/api/shared-quotes/${encodeURIComponent(sharedId)}/photo?name=${encodeURIComponent(name)}`;
   useEffect(() => {
@@ -2455,7 +2456,7 @@ function SharedHotel({ hotel, index, sharedId, date }: { hotel: HotelReservation
       </div>
       {photos.length > 0 && sharedId ? <div className={`shared-hotel-gallery shared-hotel-gallery-${Math.min(photos.length, 4)}`}>
         {photos.map((name, photoIndex) => <button key={name} type="button" onClick={() => setSelectedPhoto(name)} aria-label={`Ampliar foto ${photoIndex + 1} de ${hotel.name || "hospedagem"}`}>
-          <img src={photoUrl(name)} alt={`${hotel.name || "Hospedagem"} — foto ${photoIndex + 1}`} loading="lazy" decoding="async" />
+          <img src={photoUrl(name)} alt={`${hotel.name || "Hospedagem"} — foto ${photoIndex + 1}`} loading="lazy" decoding="async" onError={() => setFailedPhotos((current) => current.includes(name) ? current : [...current, name])} />
           <span>Ampliar</span>
         </button>)}
       </div> : null}
