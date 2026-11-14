@@ -237,6 +237,14 @@ type QuoteOption = {
   manualNote?: string;
   pixNote?: string;
   notes?: string;
+  flightOut?: Flight;
+  flightBack?: Flight;
+  flightOutSegments?: Flight[];
+  flightBackSegments?: Flight[];
+  car?: CarReservation;
+  insurance?: InsuranceReservation;
+  tours?: TourReservation[];
+  transfers?: TransferReservation[];
 };
 type Quote = {
   id: string;
@@ -2265,8 +2273,6 @@ function LogoutIcon() {
 function SharedQuotePage({ quote, settings }: SharedQuote) {
   const date = (value: string) => value ? new Date(`${value}T12:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" }) : "Data a confirmar";
   const installmentDialogRef = useRef<HTMLDialogElement>(null);
-  const outboundFlights = [quote.flightOut, ...(quote.flightOutSegments ?? [])].filter((flight) => flight.from || flight.to || flight.code);
-  const returnFlights = [quote.flightBack, ...(quote.flightBackSegments ?? [])].filter((flight) => flight.from || flight.to || flight.code);
   const [airports, setAirports] = useState<Airport[]>(airportCache ?? []);
   const [airportTimeZones, setAirportTimeZones] = useState<Record<string, string> | null>(airportTimeZoneCache);
   useEffect(() => {
@@ -2293,6 +2299,17 @@ function SharedQuotePage({ quote, settings }: SharedQuote) {
   });
   const [optionsOpen, setOptionsOpen] = useState(false);
   const activeOption = multiOptions ? sharedOptions[Math.min(selectedOptionIndex, sharedOptions.length - 1)] : null;
+  const ownFlights = activeOption?.flightOut !== undefined;
+  const effFlightOut = ownFlights && activeOption?.flightOut ? activeOption.flightOut : quote.flightOut;
+  const effFlightOutSegments = ownFlights ? activeOption?.flightOutSegments ?? [] : quote.flightOutSegments ?? [];
+  const effFlightBack = ownFlights ? activeOption?.flightBack ?? emptyFlight() : quote.flightBack;
+  const effFlightBackSegments = ownFlights ? activeOption?.flightBackSegments ?? [] : quote.flightBackSegments ?? [];
+  const effCar = activeOption?.car ?? quote.car;
+  const effInsurance = activeOption?.insurance ?? quote.insurance;
+  const effTours = activeOption?.tours ?? quote.tours;
+  const effTransfers = activeOption?.transfers ?? quote.transfers;
+  const outboundFlights = [effFlightOut, ...effFlightOutSegments].filter((flight) => flight.from || flight.to || flight.code);
+  const returnFlights = [effFlightBack, ...effFlightBackSegments].filter((flight) => flight.from || flight.to || flight.code);
   const activePrice = activeOption ? activeOption.cashPrice : quote.cashPrice;
   const activeInstallmentText = activeOption ? activeOption.installments : quote.installments;
   const installment = installmentCalculation(activePrice, activeInstallmentText);
@@ -2329,9 +2346,9 @@ function SharedQuotePage({ quote, settings }: SharedQuote) {
     ...outboundFlights.map((flight, index) => flightMessage(flight, `Ida${index ? ` ${index + 1}` : ""}`)),
     ...returnFlights.map((flight, index) => flightMessage(flight, `Volta${index ? ` ${index + 1}` : ""}`)),
     ...hotels.map(({ hotel }, index) => `Hospedagem ${index + 1}: ${hotel.name || "Hotel a confirmar"} · ${date(hotel.checkin)} ${hotel.checkinTime || ""} até ${date(hotel.checkout)} ${hotel.checkoutTime || ""}`.trim()),
-    quote.car.pickupAddress ? `Carro: retirada em ${quote.car.pickupAddress}, ${date(quote.car.pickupDate)} ${quote.car.pickupTime || ""}; devolução em ${quote.car.returnAddress || quote.car.pickupAddress}, ${date(quote.car.returnDate)} ${quote.car.returnTime || ""}.` : "",
-    quote.insurance.description || quote.insurance.provider || quote.insurance.plan ? `Seguro viagem: ${quote.insurance.description || [quote.insurance.provider, quote.insurance.plan].filter(Boolean).join(" · ")}` : "",
-    ...quote.tours.map((tour, index) => `Passeio ${index + 1}: ${tour.name}${tour.date ? ` · ${date(tour.date)}` : ""}`),
+    effCar.pickupAddress ? `Carro: retirada em ${effCar.pickupAddress}, ${date(effCar.pickupDate)} ${effCar.pickupTime || ""}; devolução em ${effCar.returnAddress || effCar.pickupAddress}, ${date(effCar.returnDate)} ${effCar.returnTime || ""}.` : "",
+    effInsurance.description || effInsurance.provider || effInsurance.plan ? `Seguro viagem: ${effInsurance.description || [effInsurance.provider, effInsurance.plan].filter(Boolean).join(" · ")}` : "",
+    ...effTours.map((tour, index) => `Passeio ${index + 1}: ${tour.name}${tour.date ? ` · ${date(tour.date)}` : ""}`),
     activeOption ? `Opção selecionada: ${activeOption.label || `Opção ${selectedOptionIndex + 1}`}${selectedHotel?.name ? ` · ${selectedHotel.name}` : ""}` : "",
     quote.showValues ? `Valor no Pix: ${money(activePrice)}${activeOption?.manualCount && activeOption?.manualValue ? ` · Em até ${activeOption.manualCount}x de ${money(activeOption.manualValue)}` : installment ? ` · Em até ${installment.installments}x de ${money(installment.installmentValue)}` : ""}` : "",
     quote.notes ? `Observações: ${quote.notes}` : "",
@@ -2364,7 +2381,7 @@ function SharedQuotePage({ quote, settings }: SharedQuote) {
           {settings.instagram ? <a href={`https://instagram.com/${settings.instagram.replace("@", "")}`} target="_blank" rel="noreferrer">Instagram</a> : null}
         </nav>
         {outboundFlights.length || returnFlights.length ? <section className="shared-itinerary" aria-label="Voos"><SharedFlightSequence flights={outboundFlights} direction="ida" airports={airports} timeZones={airportTimeZones} /><SharedFlightSequence flights={returnFlights} direction="volta" airports={airports} timeZones={airportTimeZones} /></section> : null}
-        {quote.car.pickupAddress ? <section className="shared-section"><h2>Reservas de carro</h2><p><strong>Retirada:</strong> {quote.car.pickupAddress} em {date(quote.car.pickupDate)}</p><p><strong>Devolução:</strong> {quote.car.returnAddress} em {date(quote.car.returnDate)}</p><p>{quote.car.models}</p></section> : null}
+        {effCar.pickupAddress ? <section className="shared-section"><h2>Reservas de carro</h2><p><strong>Retirada:</strong> {effCar.pickupAddress} em {date(effCar.pickupDate)}</p><p><strong>Devolução:</strong> {effCar.returnAddress} em {date(effCar.returnDate)}</p><p>{effCar.models}</p></section> : null}
         {multiOptions && activeOption ? <section className="shared-section shared-options">
           <h2>Escolha sua opção</h2>
           <button type="button" className="shared-options-toggle" aria-expanded={optionsOpen} aria-controls="shared-options-list" onClick={() => setOptionsOpen((open) => !open)}>
@@ -2391,8 +2408,8 @@ function SharedQuotePage({ quote, settings }: SharedQuote) {
           {activeOption.notes ? <article className="shared-option-card shared-option-conditions"><small>Condições desta opção</small><p className="shared-notes">{activeOption.notes}</p></article> : null}
         </section> : null}
         {hotels.length ? <section className="shared-section"><h2>Hospedagem</h2><div className="shared-hotels">{hotels.map(({ hotel, index }) => <SharedHotel key={`${hotel.name}-${index}`} hotel={hotel} index={multiOptions ? 0 : index} sharedId={sharedId} date={date} />)}</div></section> : null}
-        {quote.tours.length ? <section className="shared-section"><h2>Passeios</h2>{quote.tours.map((tour, index) => <article key={`${tour.name}-${index}`} className="shared-hotel-copy"><small>Passeio {index + 1}</small><h3>{tour.name}</h3><p>{[tour.provider, tour.date ? date(tour.date) : ""].filter(Boolean).join(" · ")}</p><p className="shared-notes">{tour.description}</p>{tour.observation ? <p className="shared-notes">{tour.observation}</p> : null}</article>)}</section> : null}
-        {quote.transfers.length ? <section className="shared-section"><h2>Transfer</h2>{quote.transfers.map((transfer, index) => <article key={`${transfer.name}-${index}`} className="shared-hotel-copy"><small>Transfer {index + 1}</small><h3>{transfer.name}</h3><p>{[transfer.provider, transfer.date ? date(transfer.date) : "", transfer.category].filter(Boolean).join(" · ")}</p><p>{transfer.outboundOrigin} → {transfer.outboundDestination}</p>{transfer.returnOrigin || transfer.returnDestination ? <p>{transfer.returnOrigin} → {transfer.returnDestination}</p> : null}<p className="shared-notes">{transfer.description}</p>{transfer.observation ? <p className="shared-notes">{transfer.observation}</p> : null}</article>)}</section> : null}
+        {effTours.length ? <section className="shared-section"><h2>Passeios</h2>{effTours.map((tour, index) => <article key={`${tour.name}-${index}`} className="shared-hotel-copy"><small>Passeio {index + 1}</small><h3>{tour.name}</h3><p>{[tour.provider, tour.date ? date(tour.date) : ""].filter(Boolean).join(" · ")}</p><p className="shared-notes">{tour.description}</p>{tour.observation ? <p className="shared-notes">{tour.observation}</p> : null}</article>)}</section> : null}
+        {effTransfers.length ? <section className="shared-section"><h2>Transfer</h2>{effTransfers.map((transfer, index) => <article key={`${transfer.name}-${index}`} className="shared-hotel-copy"><small>Transfer {index + 1}</small><h3>{transfer.name}</h3><p>{[transfer.provider, transfer.date ? date(transfer.date) : "", transfer.category].filter(Boolean).join(" · ")}</p><p>{transfer.outboundOrigin} → {transfer.outboundDestination}</p>{transfer.returnOrigin || transfer.returnDestination ? <p>{transfer.returnOrigin} → {transfer.returnDestination}</p> : null}<p className="shared-notes">{transfer.description}</p>{transfer.observation ? <p className="shared-notes">{transfer.observation}</p> : null}</article>)}</section> : null}
         <section className="shared-section shared-attendant"><h2><SharedIcon kind="person" /> Seu Atendente</h2><p className="shared-attendant-intro">Estamos aqui para ajudar em qualquer dúvida sobre sua viagem</p><div className="shared-attendant-profile"><span className="shared-attendant-avatar" aria-hidden="true">{(settings.contactName || "RM").trim().slice(0, 2).toUpperCase()}</span><div><h3>{settings.contactName || "Equipe de atendimento"}</h3>{settings.contactEmail ? <p><SharedIcon kind="mail" />{settings.contactEmail}</p> : null}{settings.contactPhone ? <p><SharedIcon kind="phone" />{settings.contactPhone}</p> : null}{settings.companyName ? <p><SharedIcon kind="building" />{settings.companyName}</p> : null}</div></div></section>
         {quote.notes ? <section className="shared-section"><h2>Informações adicionais</h2><p className="shared-notes">{quote.notes}</p></section> : null}
         <section className={`shared-cta${quote.showValues ? " shared-cta-with-price" : ""}`}>
@@ -3270,7 +3287,7 @@ function FlightsForm({
 }: {
   quote: Quote;
   onChange: (q: Quote) => void;
-  onImport: () => void;
+  onImport?: () => void;
 }) {
   const [showReturn, setShowReturn] = useState(() => Boolean(quote.flightBack.code || quote.flightBack.from || quote.flightBack.to || quote.flightBack.date || quote.flightBackSegments?.length));
   return (
@@ -3282,7 +3299,7 @@ function FlightsForm({
             if (!showReturn) setShowReturn(true);
             else onChange({ ...quote, flightBackSegments: [...(quote.flightBackSegments ?? []), inheritFlightBaggage({ ...emptyFlight(), segmentId: uid() }, quote.flightBack, true)] });
           }}><PlusIcon /> {showReturn ? "Adicionar conexão" : "Nova viagem de volta"}</button>
-          <button className="dark-mini" type="button" onClick={onImport}><DownloadIcon /> Importar</button>
+          {onImport ? <button className="dark-mini" type="button" onClick={onImport}><DownloadIcon /> Importar</button> : null}
         </div>
       </div>
       <CompactFlightBlock
@@ -3671,6 +3688,39 @@ function OptionsForm({ quote, settings, onChange, onAdd }: { quote: Quote; setti
     const next = options.filter((_, itemIndex) => itemIndex !== index);
     onChange(syncPrimaryOption(quote, next.length > 1 ? next : []));
   };
+  const optionScope = (option: QuoteOption): Quote => ({
+    ...quote,
+    flightOut: option.flightOut ?? quote.flightOut,
+    flightBack: option.flightBack ?? quote.flightBack,
+    flightOutSegments: option.flightOutSegments ?? quote.flightOutSegments,
+    flightBackSegments: option.flightBackSegments ?? quote.flightBackSegments,
+    car: option.car ?? quote.car,
+    insurance: option.insurance ?? quote.insurance,
+    tours: option.tours ?? quote.tours,
+    transfers: option.transfers ?? quote.transfers,
+  });
+  const setOverride = (index: number, kind: "flights" | "car" | "insurance" | "tours" | "transfers", enabled: boolean) => {
+    const changes: Partial<QuoteOption> = enabled
+      ? kind === "flights"
+        ? { flightOut: { ...quote.flightOut }, flightBack: { ...quote.flightBack }, flightOutSegments: [...(quote.flightOutSegments ?? [])], flightBackSegments: [...(quote.flightBackSegments ?? [])] }
+        : kind === "car"
+          ? { car: { ...quote.car } }
+          : kind === "insurance"
+            ? { insurance: { ...quote.insurance } }
+            : kind === "tours"
+              ? { tours: quote.tours.map((tour) => ({ ...tour })) }
+              : { transfers: quote.transfers.map((transfer) => ({ ...transfer })) }
+      : kind === "flights"
+        ? { flightOut: undefined, flightBack: undefined, flightOutSegments: undefined, flightBackSegments: undefined }
+        : kind === "car"
+          ? { car: undefined }
+          : kind === "insurance"
+            ? { insurance: undefined }
+            : kind === "tours"
+              ? { tours: undefined }
+              : { transfers: undefined };
+    update(index, changes);
+  };
   return (
     <SectionBand icon="▥" title="Opções do orçamento" action="Adicionar opção" onAdd={onAdd}>
       <p className="text-sm text-slate-400">Cada opção tem a sua hospedagem (cadastrada na aba Hospedagens), o seu preço e as suas condições. Voos e demais serviços cadastrados nas outras abas são comuns a todas as opções. No link compartilhado o cliente vê uma opção por vez e alterna pelo botão Opções.</p>
@@ -3718,6 +3768,29 @@ function OptionsForm({ quote, settings, onChange, onAdd }: { quote: Quote; setti
             <Field label="Condições desta opção (cancelamento, observações)">
               <textarea className="input" rows={3} maxLength={1000} value={option.notes ?? ""} onChange={(e) => update(index, { notes: e.target.value })} />
             </Field>
+            <div className="option-overrides">
+              <p className="text-sm text-slate-400">Conteúdo próprio desta opção (opcional). Ao ativar, o conteúdo comum é copiado para a opção e passa a valer só para ela; ao desativar, a opção volta a herdar o conteúdo comum.</p>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={option.flightOut !== undefined} onChange={(e) => setOverride(index, "flights", e.target.checked)} /> Aéreo próprio
+              </label>
+              {option.flightOut !== undefined ? <FlightsForm quote={optionScope(option)} onChange={(q) => update(index, { flightOut: q.flightOut, flightBack: q.flightBack, flightOutSegments: q.flightOutSegments, flightBackSegments: q.flightBackSegments })} /> : null}
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={option.car !== undefined} onChange={(e) => setOverride(index, "car", e.target.checked)} /> Carro próprio
+              </label>
+              {option.car !== undefined ? <CarsForm quote={optionScope(option)} onChange={(q) => update(index, { car: q.car })} /> : null}
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={option.insurance !== undefined} onChange={(e) => setOverride(index, "insurance", e.target.checked)} /> Seguro próprio
+              </label>
+              {option.insurance !== undefined ? <InsuranceForm quote={optionScope(option)} onChange={(q) => update(index, { insurance: q.insurance })} /> : null}
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={option.tours !== undefined} onChange={(e) => setOverride(index, "tours", e.target.checked)} /> Passeios próprios
+              </label>
+              {option.tours !== undefined ? <ToursForm quote={optionScope(option)} onChange={(q) => update(index, { tours: q.tours })} /> : null}
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={option.transfers !== undefined} onChange={(e) => setOverride(index, "transfers", e.target.checked)} /> Transfers próprios
+              </label>
+              {option.transfers !== undefined ? <TransfersForm quote={optionScope(option)} onChange={(q) => update(index, { transfers: q.transfers })} /> : null}
+            </div>
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={Boolean(option.recommended)} onChange={(e) => update(index, { recommended: e.target.checked })} /> Recomendada
             </label>

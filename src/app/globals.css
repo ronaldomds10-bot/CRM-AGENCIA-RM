@@ -3071,3 +3071,5 @@ textarea:focus-visible {
 .shared-cta-option { display: block; color: #d9f5e7; font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; }
 .shared-cta-price .shared-option-installment { color: #d9f5e7; }
 .shared-option-conditions p { margin: 0; color: #44536b; font-size: .88rem; }
+.option-overrides { display: grid; gap: .75rem; border-top: 1px dashed #2a3c55; padding-top: .75rem; }
+.option-overrides > label { font-weight: 600; }

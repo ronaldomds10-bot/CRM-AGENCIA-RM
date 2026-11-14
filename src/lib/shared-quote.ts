@@ -71,6 +71,14 @@ function publicOption(value: unknown) {
     cashPrice: number(option.cashPrice), installments: string(option.installments, 40), paymentOption: string(option.paymentOption, 200), recommended: boolean(option.recommended),
     manualCount: Math.max(0, Math.min(24, Math.floor(number(option.manualCount)))), manualValue: number(option.manualValue), manualNote: string(option.manualNote, 40), pixNote: string(option.pixNote, 60),
     notes: string(option.notes, 1_000),
+    ...(option.flightOut !== undefined ? {
+      flightOut: publicFlight(option.flightOut), flightBack: publicFlight(option.flightBack),
+      flightOutSegments: array(option.flightOutSegments).slice(0, 8).map(publicFlight), flightBackSegments: array(option.flightBackSegments).slice(0, 8).map(publicFlight),
+    } : {}),
+    ...(option.car !== undefined ? { car: publicCar(option.car) } : {}),
+    ...(option.insurance !== undefined ? { insurance: publicInsurance(option.insurance) } : {}),
+    ...(option.tours !== undefined ? { tours: array(option.tours).slice(0, 30).map(publicTour) } : {}),
+    ...(option.transfers !== undefined ? { transfers: array(option.transfers).slice(0, 30).map(publicTransfer) } : {}),
   };
 }
 
