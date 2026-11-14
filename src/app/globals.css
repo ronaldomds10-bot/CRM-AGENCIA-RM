@@ -3043,3 +3043,12 @@ textarea:focus-visible {
 .cpf-alert.error { border-color:#8b3946; background:#351820; color:#ffb5bd; }
 .cpf-empty { border:1px dashed #304860; border-radius:.5rem; padding:1.25rem; text-align:center; color:#a7c5e1; }
 @media(max-width:650px) { .cpf-head { align-items:flex-start; } .cpf-passenger { grid-template-columns:1fr; } .cpf-tabs { overflow-x:auto; flex-wrap:nowrap; } .cpf-tabs button { white-space:nowrap; } }
+
+.shared-options-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; }
+.shared-option-card { position: relative; border: 1px solid #d6e0ed; border-radius: 10px; background: #fff; padding: 1.1rem; color: #15243a; display: grid; gap: .35rem; }
+.shared-option-card small { text-transform: uppercase; letter-spacing: .06em; color: #5b6b82; }
+.shared-option-card h3 { margin: 0; font-size: 1.05rem; }
+.shared-option-recommended { border-color: #c9a45c; box-shadow: 0 0 0 1px #c9a45c; }
+.shared-option-badge { position: absolute; top: -.7rem; right: .8rem; background: #c9a45c; color: #15243a; font-size: .7rem; font-weight: 700; border-radius: 999px; padding: .15rem .6rem; }
+.shared-option-pix strong { font-size: 1.25rem; color: #058753; }
+.shared-option-installment { margin: 0; color: #5b6b82; font-size: .9rem; }

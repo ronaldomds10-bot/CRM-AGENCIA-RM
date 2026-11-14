@@ -43,3 +43,11 @@ test("supports legacy counts and empty flights", () => {
   assert.equal(result.flightOut.passengerCount, 3);
   assert.equal(result.flightBack.passengerCount, 0);
 });
+
+test("keeps quote options with a bounded whitelist", () => {
+  const result = publicQuoteDto({ options: [{ id: "a", label: "Opção 1", hotelIndex: 0, cashPrice: 100, installments: "6x - 6,88%", paymentOption: "x", recommended: true, secret: "no" }] });
+  assert.equal(result.options.length, 1);
+  assert.equal(result.options[0].cashPrice, 100);
+  assert.ok(!JSON.stringify(result).includes("secret"));
+  assert.deepEqual(publicQuoteDto({}).options, []);
+});

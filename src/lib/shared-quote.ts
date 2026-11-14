@@ -64,6 +64,14 @@ function publicTransfer(value: unknown) {
   };
 }
 
+function publicOption(value: unknown) {
+  const option = object(value);
+  return {
+    id: string(option.id, 100), label: string(option.label, 80), hotelIndex: Math.max(0, Math.min(8, Math.floor(number(option.hotelIndex)))),
+    cashPrice: number(option.cashPrice), installments: string(option.installments, 40), paymentOption: string(option.paymentOption, 200), recommended: boolean(option.recommended),
+  };
+}
+
 export function publicQuoteDto(value: unknown) {
   const quote = object(value);
   return {
@@ -72,7 +80,7 @@ export function publicQuoteDto(value: unknown) {
     notes: string(quote.notes, 3_000), showValues: boolean(quote.showValues), installments: string(quote.installments, 40), paymentOption: string(quote.paymentOption, 200),
     flightOut: publicFlight(quote.flightOut), flightBack: publicFlight(quote.flightBack), flightOutSegments: array(quote.flightOutSegments).slice(0, 8).map(publicFlight),
     flightBackSegments: array(quote.flightBackSegments).slice(0, 8).map(publicFlight), car: publicCar(quote.car), hotel: publicHotel(quote.hotel),
-    hotelOptions: array(quote.hotelOptions).slice(0, 8).map(publicHotel), insurance: publicInsurance(quote.insurance), tours: array(quote.tours).slice(0, 30).map(publicTour),
+    hotelOptions: array(quote.hotelOptions).slice(0, 8).map(publicHotel), options: array(quote.options).slice(0, 8).map(publicOption), insurance: publicInsurance(quote.insurance), tours: array(quote.tours).slice(0, 30).map(publicTour),
     transfers: array(quote.transfers).slice(0, 30).map(publicTransfer),
   };
 }
