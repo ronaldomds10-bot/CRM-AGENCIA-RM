@@ -3052,3 +3052,4 @@ textarea:focus-visible {
 .shared-option-badge { position: absolute; top: -.7rem; right: .8rem; background: #c9a45c; color: #15243a; font-size: .7rem; font-weight: 700; border-radius: 999px; padding: .15rem .6rem; }
 .shared-option-pix strong { font-size: 1.25rem; color: #058753; }
 .shared-option-installment { margin: 0; color: #5b6b82; font-size: .9rem; }
+.shared-option-note { display: block; color: #5b6b82; font-size: .8rem; text-transform: none; letter-spacing: 0; }

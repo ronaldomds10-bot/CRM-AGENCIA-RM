@@ -235,6 +235,7 @@ type QuoteOption = {
   manualCount?: number;
   manualValue?: number;
   manualNote?: string;
+  pixNote?: string;
 };
 type Quote = {
   id: string;
@@ -2355,7 +2356,7 @@ function SharedQuotePage({ quote, settings }: SharedQuote) {
             {option.recommended ? <span className="shared-option-badge">Recomendada</span> : null}
             <small>{option.label || `Opção ${index + 1}`}</small>
             <h3>{hotel?.name || "Hospedagem a confirmar"}</h3>
-            {quote.showValues ? <><p className="shared-option-pix"><span>Valor no Pix:</span> <strong>{money(option.cashPrice)}</strong></p>{option.manualCount && option.manualValue ? <p className="shared-option-installment">ou {option.manualCount}x de {money(option.manualValue)}{option.manualNote ? ` ${option.manualNote}` : ""}</p> : calc ? <p className="shared-option-installment">ou até {calc.installments}x de {money(calc.installmentValue)}</p> : null}</> : null}
+            {quote.showValues ? <><p className="shared-option-pix"><span>Valor no Pix:</span> <strong>{money(option.cashPrice)}</strong>{option.pixNote ? <small className="shared-option-note">{option.pixNote}</small> : null}</p>{option.manualCount && option.manualValue ? <p className="shared-option-installment">ou {option.manualCount}x de {money(option.manualValue)}{option.manualNote ? ` ${option.manualNote}` : ""}</p> : calc ? <p className="shared-option-installment">ou até {calc.installments}x de {money(calc.installmentValue)}</p> : null}</> : null}
           </article>;
         })}</div></section> : null}
         {quote.tours.length ? <section className="shared-section"><h2>Passeios</h2>{quote.tours.map((tour, index) => <article key={`${tour.name}-${index}`} className="shared-hotel-copy"><small>Passeio {index + 1}</small><h3>{tour.name}</h3><p>{[tour.provider, tour.date ? date(tour.date) : ""].filter(Boolean).join(" · ")}</p><p className="shared-notes">{tour.description}</p>{tour.observation ? <p className="shared-notes">{tour.observation}</p> : null}</article>)}</section> : null}
@@ -3655,6 +3656,9 @@ function OptionsForm({ quote, settings, onChange, onAdd }: { quote: Quote; setti
               </Field>
               <Field label="Preço à vista">
                 <CurrencyInput value={option.cashPrice} onChange={(cashPrice) => update(index, { cashPrice })} />
+              </Field>
+              <Field label="Complemento do Pix (ex.: total para 2 adultos)">
+                <input className="input" maxLength={60} value={option.pixNote ?? ""} onChange={(e) => update(index, { pixNote: e.target.value })} />
               </Field>
               <Field label="Quantidade máxima de parcelas">
                 <select className="input" value={option.installments} onChange={(e) => update(index, { installments: e.target.value })}>
