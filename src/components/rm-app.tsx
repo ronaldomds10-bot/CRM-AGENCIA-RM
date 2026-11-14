@@ -2962,7 +2962,15 @@ function QuoteEditor({
         <button className="dark-mini" disabled={sharePending} onClick={openSharedQuote}>
           {sharePending ? "Gerando link..." : "Compartilhar Beta"}
         </button>
-        <button className="dark-mini" onClick={() => tab === "hotels" ? openHotelIssuePdf(draft, settings) : openQuotePdf(draft, settings)}>
+        <button className="dark-mini" onClick={() => {
+          const hasOptionOverrides = (draft.options ?? []).some((option) => option.flightOut !== undefined || option.car !== undefined || option.insurance !== undefined || option.tours !== undefined || option.transfers !== undefined);
+          if (tab !== "hotels" && hasOptionOverrides) {
+            setShareError("O PDF mostra apenas o conteúdo comum do orçamento e ainda não suporta conteúdo próprio por opção. Use o link compartilhado para apresentar as opções.");
+            return;
+          }
+          setShareError("");
+          tab === "hotels" ? openHotelIssuePdf(draft, settings) : openQuotePdf(draft, settings);
+        }}>
           Ver PDF
         </button>
         <SaveButton className="light-mini" onSave={() => onSave(draft)} />
