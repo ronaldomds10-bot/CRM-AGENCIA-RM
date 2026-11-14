@@ -236,6 +236,7 @@ type QuoteOption = {
   manualValue?: number;
   manualNote?: string;
   pixNote?: string;
+  notes?: string;
 };
 type Quote = {
   id: string;
@@ -2387,6 +2388,7 @@ function SharedQuotePage({ quote, settings }: SharedQuote) {
             <p className="shared-option-pix"><span>Valor no Pix:</span> <strong>{money(activeOption.cashPrice)}</strong>{activeOption.pixNote ? <small className="shared-option-note">{activeOption.pixNote}</small> : null}</p>
             {activeOption.manualCount && activeOption.manualValue ? <p className="shared-option-installment">ou {activeOption.manualCount}x de {money(activeOption.manualValue)}{activeOption.manualNote ? ` ${activeOption.manualNote}` : ""}</p> : installment ? <p className="shared-option-installment">ou até {installment.installments}x de {money(installment.installmentValue)}</p> : null}
           </article> : null}
+          {activeOption.notes ? <article className="shared-option-card shared-option-conditions"><small>Condições desta opção</small><p className="shared-notes">{activeOption.notes}</p></article> : null}
         </section> : null}
         {hotels.length ? <section className="shared-section"><h2>Hospedagem</h2><div className="shared-hotels">{hotels.map(({ hotel, index }) => <SharedHotel key={`${hotel.name}-${index}`} hotel={hotel} index={multiOptions ? 0 : index} sharedId={sharedId} date={date} />)}</div></section> : null}
         {quote.tours.length ? <section className="shared-section"><h2>Passeios</h2>{quote.tours.map((tour, index) => <article key={`${tour.name}-${index}`} className="shared-hotel-copy"><small>Passeio {index + 1}</small><h3>{tour.name}</h3><p>{[tour.provider, tour.date ? date(tour.date) : ""].filter(Boolean).join(" · ")}</p><p className="shared-notes">{tour.description}</p>{tour.observation ? <p className="shared-notes">{tour.observation}</p> : null}</article>)}</section> : null}
@@ -3671,7 +3673,7 @@ function OptionsForm({ quote, settings, onChange, onAdd }: { quote: Quote; setti
   };
   return (
     <SectionBand icon="▥" title="Opções do orçamento" action="Adicionar opção" onAdd={onAdd}>
-      <p className="text-sm text-slate-400">Cada opção tem a sua hospedagem (cadastrada na aba Hospedagens) e o seu preço. Voos e demais serviços são comuns a todas. O cliente vê todas as opções no mesmo link.</p>
+      <p className="text-sm text-slate-400">Cada opção tem a sua hospedagem (cadastrada na aba Hospedagens), o seu preço e as suas condições. Voos e demais serviços cadastrados nas outras abas são comuns a todas as opções. No link compartilhado o cliente vê uma opção por vez e alterna pelo botão Opções.</p>
       {options.map((option, index) => {
         const calculation = installmentCalculation(option.cashPrice, option.installments);
         return (
@@ -3713,6 +3715,9 @@ function OptionsForm({ quote, settings, onChange, onAdd }: { quote: Quote; setti
                 <input className="input" value={option.manualNote ?? ""} onChange={(e) => update(index, { manualNote: e.target.value })} />
               </Field>
             </div>
+            <Field label="Condições desta opção (cancelamento, observações)">
+              <textarea className="input" rows={3} maxLength={1000} value={option.notes ?? ""} onChange={(e) => update(index, { notes: e.target.value })} />
+            </Field>
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={Boolean(option.recommended)} onChange={(e) => update(index, { recommended: e.target.checked })} /> Recomendada
             </label>
