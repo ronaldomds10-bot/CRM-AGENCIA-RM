@@ -26,6 +26,15 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
     if (!allowed) return NextResponse.json({ error: "Foto não pertence a este orçamento." }, { status: 404 });
 
     const response = await fetchGooglePlaces(`/v1/${name}/media?maxWidthPx=900&maxHeightPx=600&skipHttpRedirect=true`);
+    if (response && response.ok && !(response.headers.get("content-type") ?? "").startsWith("image/")) {
+      const detail = await response.json().catch(() => null) as { photoUri?: string } | null;
+      if (detail?.photoUri) {
+        const image = await fetch(detail.photoUri, { cache: "no-store", signal: AbortSignal.timeout(8_000) });
+        if (image.ok && (image.headers.get("content-type") ?? "").startsWith("image/")) {
+          return new NextResponse(image.body, { headers: { "Cache-Control": "public, max-age=86400, s-maxage=604800", "Content-Type": image.headers.get("content-type") ?? "image/jpeg", "X-Content-Type-Options": "nosniff" } });
+        }
+      }
+    }
     if (!response) return NextResponse.json({ error: PLACES_NOT_CONFIGURED }, { status: 503 });
     if (!response.ok) {
       const upstreamDetail = await response.text().then((text) => text.slice(0, 400)).catch(() => "");
